@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# OS / Editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+.turbo/
+coverage/
+
+# Root-level working files — moved to src/ and server/
+/AgentContext.tsx
+/AgentTerminal.tsx
+/TreasuryDashboard.tsx
+/page.tsx
+/agent-client.ts
+/merchant-api.ts
+/lend402-vault.clar
+/ui/
+
+# Claude AI assistant files
+CLAUDE.md
+.claude/
