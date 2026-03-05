@@ -326,3 +326,269 @@ async function buildAndSignBorrowAndPay(
 // ---------------------------------------------------------------------------
 // THE INTERCEPTOR
 // ---------------------------------------------------------------------------
+
+/**
+ * Attaches the Lend402 x402 payment interceptor to an Axios instance.
+ *
+ * The interceptor catches HTTP 402 responses, extracts the payment challenge,
+ * performs the JIT borrow, signs the contract-call, and retries the original
+ * request with the `payment-signature` header attached.
+ */
+function attachPaymentInterceptor(
+  axiosInstance: AxiosInstance,
+  config: AgentClientConfig
+): void {
+  const maxRetries = config.maxPaymentRetries ?? DEFAULT_MAX_RETRIES;
+
+  axiosInstance.interceptors.response.use(
+    // Pass-through successful responses
+    (response: AxiosResponse) => {
+      // If the response carries a payment-response header, decode and log it
+      const paymentResponseHeader =
+        response.headers[PAYMENT_RESPONSE_HEADER];
+      if (paymentResponseHeader) {
+        const pr = decodeHeader<PaymentResponsePayload>(paymentResponseHeader);
+        emit(config.onEvent, "PAYMENT_CONFIRMED", {
+          txid: pr.txid,
+          block_height: pr.block_height,
+          confirmed_at: pr.confirmed_at,
+          amount_usdcx: pr.amount_usdcx,
+        });
+      }
+      return response;
+    },
+
+    // Handle errors — intercept 402s
+    async (error: unknown) => {
+      if (!axios.isAxiosError(error)) throw error;
+
+      const originalRequest = error.config as InternalAxiosRequestConfig & {
+        _paymentRetryCount?: number;
+      };
+
+      // Only intercept HTTP 402
+      if (error.response?.status !== 402) throw error;
+
+      // Guard against infinite retry loops
+      const retryCount = originalRequest._paymentRetryCount ?? 0;
+      if (retryCount >= maxRetries) {
+        throw new Error(
+          `Lend402: max payment retries (${maxRetries}) exceeded for ${originalRequest.url}`
+        );
+      }
+      originalRequest._paymentRetryCount = retryCount + 1;
+
+      // ── Stage 1: Decode the payment-required challenge ──────────────────
+      const paymentRequiredRaw =
+        error.response.headers[PAYMENT_REQUIRED_HEADER];
+      if (!paymentRequiredRaw) {
+        throw new Error(
+          "Lend402: 402 response missing `payment-required` header"
+        );
+      }
+
+      const challenge = decodeHeader<PaymentRequiredPayload>(paymentRequiredRaw);
+
+      emit(config.onEvent, "PAYMENT_REQUIRED_RECEIVED", {
+        resource: challenge.resource,
+        amount_usdcx: challenge.amount_usdcx,
+        merchant_address: challenge.merchant_address,
+        network: challenge.network,
+        nonce: challenge.nonce,
+        expires_at: challenge.expires_at,
+      });
+
+      // Validate challenge hasn't expired
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec > challenge.expires_at) {
+        throw new Error(
+          `Lend402: payment-required challenge expired at ${challenge.expires_at}`
+        );
+      }
+
+      // Validate network matches agent config
+      if (challenge.network !== config.caip2Network) {
+        throw new Error(
+          `Lend402: network mismatch — agent is on ${config.caip2Network}, merchant requires ${challenge.network}`
+        );
+      }
+
+      const amountUsdcx = BigInt(challenge.amount_usdcx);
+
+      // ── Stage 2: Simulate borrow to get exact collateral requirement ─────
+      let simulation: SimulateBorrowResult;
+      try {
+        simulation = await simulateBorrow(amountUsdcx, config);
+      } catch (simErr) {
+        throw new Error(
+          `Lend402: simulate-borrow failed: ${(simErr as Error).message}`
+        );
+      }
+
+      emit(config.onEvent, "SIMULATE_BORROW_OK", {
+        required_collateral_sbtc: simulation.required_collateral_sbtc.toString(),
+        origination_fee_usdcx: simulation.origination_fee_usdcx.toString(),
+        net_payment_usdcx: simulation.net_payment_usdcx.toString(),
+        sbtc_price_usd8: simulation.sbtc_price_usd8.toString(),
+        collateral_ratio_bps: simulation.collateral_ratio_bps.toString(),
+      });
+
+      // ── Stage 3: Build the contract-call transaction ─────────────────────
+      let signedTx: StacksTransaction;
+      try {
+        signedTx = await buildAndSignBorrowAndPay(
+          amountUsdcx,
+          challenge.merchant_address,
+          simulation.required_collateral_sbtc,
+          simulation.net_payment_usdcx,
+          config
+        );
+      } catch (buildErr) {
+        throw new Error(
+          `Lend402: failed to build borrow-and-pay tx: ${(buildErr as Error).message}`
+        );
+      }
+
+      emit(config.onEvent, "TX_BUILT", {
+        amount_usdcx: amountUsdcx.toString(),
+        collateral_sbtc: simulation.required_collateral_sbtc.toString(),
+        merchant: challenge.merchant_address,
+      });
+
+      // ── Stage 4: Serialize the signed transaction ───────────────────────
+      const serialized = Buffer.from(signedTx.serialize()).toString("hex");
+
+      emit(config.onEvent, "TX_SIGNED", {
+        tx_hex_preview: serialized.slice(0, 32) + "…",
+        byte_length: serialized.length / 2,
+      });
+
+      // ── Stage 5: Encode into payment-signature header ───────────────────
+      const signaturePayload: PaymentSignaturePayload = {
+        signed_tx_hex: serialized,
+        agent_address: config.agentAddress,
+        nonce: challenge.nonce,
+        network: config.caip2Network,
+        signed_at: Math.floor(Date.now() / 1000),
+      };
+
+      const encodedSignature = encodeHeader(signaturePayload);
+
+      emit(config.onEvent, "PAYMENT_SIGNATURE_ATTACHED", {
+        nonce: challenge.nonce,
+        signed_at: signaturePayload.signed_at,
+        agent_address: config.agentAddress,
+      });
+
+      // ── Stage 6: Retry original request with payment-signature ───────────
+      if (!originalRequest.headers) {
+        originalRequest.headers = {} as InternalAxiosRequestConfig["headers"];
+      }
+      originalRequest.headers[PAYMENT_SIGNATURE_HEADER] = encodedSignature;
+
+      emit(config.onEvent, "REQUEST_RETRIED", {
+        url: originalRequest.url,
+        retry_count: originalRequest._paymentRetryCount,
+      });
+
+      return axiosInstance(originalRequest);
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PUBLIC FACTORY: withPaymentInterceptor
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a pre-configured Axios instance with the Lend402 x402 payment
+ * interceptor attached.
+ *
+ * Usage:
+ * ```typescript
+ * const agent = withPaymentInterceptor({
+ *   privateKey: process.env.AGENT_PRIVATE_KEY!,
+ *   agentAddress: "SP1AGENT...",
+ *   network: new StacksMainnet(),
+ *   caip2Network: "stacks:1",
+ *   vaultContractAddress: "SP3VAULT...",
+ *   vaultContractName: "lend402-vault",
+ *   sbtcContractAddress: "SP2PABAF9...",
+ *   sbtcContractName: "sbtc-token",
+ *   usdcxContractAddress: "SP3K8BC0P...",
+ *   usdcxContractName: "usdc-token",
+ *   onEvent: (event) => dashboard.push(event),
+ * });
+ *
+ * // This call will auto-pay any 402 it hits via Lend402 JIT borrow
+ * const { data } = await agent.get("https://api.dataprovider.com/premium");
+ * ```
+ */
+export function withPaymentInterceptor(
+  config: AgentClientConfig,
+  axiosConfig?: AxiosRequestConfig
+): AxiosInstance {
+  const instance = axios.create({
+    timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    ...axiosConfig,
+  });
+
+  // Emit on every outbound request for dashboard logging
+  instance.interceptors.request.use((req: InternalAxiosRequestConfig) => {
+    emit(config.onEvent, "REQUEST_SENT", { url: req.url, method: req.method });
+    return req;
+  });
+
+  attachPaymentInterceptor(instance, config);
+  return instance;
+}
+
+// ---------------------------------------------------------------------------
+// STANDALONE EXPORT: broadcastSignedTx
+// ---------------------------------------------------------------------------
+
+/**
+ * Broadcasts a signed Stacks transaction to the network and returns the txid.
+ * Used by the Facilitator node — exported here for shared use.
+ */
+export async function broadcastSignedTx(
+  signedTxHex: string,
+  network: StacksNetwork
+): Promise<TxBroadcastResult> {
+  const tx = deserializeTransaction(signedTxHex);
+  const result = await broadcastTransaction(tx, network);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// NETWORK FACTORY HELPERS
+// ---------------------------------------------------------------------------
+
+export function mainnetConfig(
+  privateKey: string,
+  agentAddress: string
+): Pick<AgentClientConfig, "network" | "caip2Network" | "vaultContractAddress" | "vaultContractName" | "sbtcContractAddress" | "sbtcContractName" | "usdcxContractAddress" | "usdcxContractName"> {
+  return {
+    network: new StacksMainnet(),
+    caip2Network: "stacks:1",
+    vaultContractAddress: "SP3VAULT000LEND402MAINNETADDRESS",
+    vaultContractName: "lend402-vault",
+    sbtcContractAddress: "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9",
+    sbtcContractName: "sbtc-token",
+    usdcxContractAddress: "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9",
+    usdcxContractName: "usdc-token",
+  };
+}
+
+export function testnetConfig(): Pick<AgentClientConfig, "network" | "caip2Network" | "vaultContractAddress" | "vaultContractName" | "sbtcContractAddress" | "sbtcContractName" | "usdcxContractAddress" | "usdcxContractName"> {
+  return {
+    network: new StacksTestnet(),
+    caip2Network: "stacks:2147483648",
+    vaultContractAddress: "ST3VAULT000LEND402TESTNETADDRESS",
+    vaultContractName: "lend402-vault",
+    sbtcContractAddress: "ST2PABAF9FTAJYNFZH93XENAJ8FVY99RRM4CB2WDX",
+    sbtcContractName: "sbtc-token",
+    usdcxContractAddress: "ST3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3CB2W5",
+    usdcxContractName: "usdc-token",
+  };
+}
