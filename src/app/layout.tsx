@@ -14,6 +14,10 @@ export const metadata: Metadata = {
   description:
     "Zero-click JIT micro-lending for AI agents. sBTC collateral → USDCx borrow → merchant payment in a single Stacks Nakamoto fast-block.",
   keywords: ["Stacks", "Bitcoin", "sBTC", "DeFi", "AI agents", "x402", "Nakamoto"],
+  other: {
+    "talentapp:project_verification":
+      "31b678dcae1e731a93b37f2f09fbe57e89f05853459e05dd0a46e88af64b1208f69fd791ee06c14fd48e6b2190e4797d28326a2020d3d8ce788394fdd5c1cfbb",
+  },
 };
 
 export const viewport: Viewport = {
