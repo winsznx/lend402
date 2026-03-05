@@ -440,3 +440,199 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
       return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// STACKS WALLET SESSION
+// ---------------------------------------------------------------------------
+
+const appConfig = new AppConfig(["store_write", "publish_data"]);
+const userSession = new UserSession({ appConfig });
+
+// ---------------------------------------------------------------------------
+// PROVIDER
+// ---------------------------------------------------------------------------
+
+export function AgentProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(agentReducer, INITIAL_STATE);
+  const isAgentRunning = useRef(false);
+
+  // Re-hydrate wallet on mount
+  useEffect(() => {
+    if (userSession.isUserSignedIn()) {
+      const profile = userSession.loadUserData();
+      const address =
+        profile.profile?.stxAddress?.testnet ??
+        profile.profile?.stxAddress?.mainnet ??
+        "";
+      if (address) dispatch({ type: "WALLET_CONNECTED", address });
+    }
+  }, []);
+
+  // ── Wallet connect ─────────────────────────────────────────────────────────
+  const connectWallet = useCallback(() => {
+    showConnect({
+      appDetails: { name: "Lend402 Command Center", icon: "/favicon.ico" },
+      redirectTo: "/",
+      onFinish: () => {
+        const profile = userSession.loadUserData();
+        const address =
+          profile.profile?.stxAddress?.testnet ??
+          profile.profile?.stxAddress?.mainnet ??
+          "";
+        dispatch({ type: "WALLET_CONNECTED", address });
+      },
+      userSession,
+    });
+  }, []);
+
+  const disconnectWallet = useCallback(() => {
+    userSession.signUserOut("/");
+    dispatch({ type: "WALLET_DISCONNECTED" });
+  }, []);
+
+  // ── Push raw AgentEvent (from agent-client onEvent callback) ───────────────
+  const pushEvent = useCallback((event: AgentEvent) => {
+    const lines = eventToLines(event);
+    lines.forEach((line) => dispatch({ type: "PUSH_TERMINAL_LINE", line }));
+
+    // Side-effects: update treasury state from events
+    switch (event.type) {
+      case "PAYMENT_REQUIRED_RECEIVED":
+        dispatch({ type: "SET_PHASE", phase: "INTERCEPTED" });
+        setTimeout(() => dispatch({ type: "SET_PHASE", phase: "SIMULATING" }), 400);
+        break;
+
+      case "TX_BUILT":
+        dispatch({ type: "SET_PHASE", phase: "SIGNING" });
+        break;
+
+      case "SIMULATE_BORROW_OK":
+        dispatch({
+          type: "SET_SIMULATE_PREVIEW",
+          preview: {
+            requiredCollateralSbtc: BigInt(
+              event.data.required_collateral_sbtc as string
+            ),
+            originationFeeUsdcx: BigInt(
+              event.data.origination_fee_usdcx as string
+            ),
+            netPaymentUsdcx: BigInt(event.data.net_payment_usdcx as string),
+            sbtcPriceUsd8: BigInt(event.data.sbtc_price_usd8 as string),
+            amountUsdcx: BigInt(0),
+          },
+        });
+        dispatch({ type: "SET_PHASE", phase: "BUILDING" });
+        break;
+
+      case "TX_SIGNED":
+        dispatch({ type: "SET_PHASE", phase: "BROADCASTING" });
+        break;
+
+      case "REQUEST_RETRIED":
+        dispatch({ type: "SET_PHASE", phase: "CONFIRMING" });
+        break;
+
+      case "PAYMENT_CONFIRMED":
+        dispatch({ type: "SET_PHASE", phase: "CONFIRMED" });
+        break;
+
+      case "ERROR":
+        dispatch({
+          type: "SET_ERROR",
+          error: (event.data.message as string) ?? "Unknown error",
+        });
+        break;
+    }
+  }, []);
+
+  // ── Trigger Agent: fires the Axios request to merchant API ────────────────
+  const triggerAgent = useCallback(async () => {
+    if (isAgentRunning.current) return;
+    isAgentRunning.current = true;
+
+    dispatch({ type: "SET_PHASE", phase: "REQUESTING" });
+
+    try {
+      // Dynamic import: agent-client runs Node-style but we call it from Next.js
+      // API route to avoid browser-side Stacks.js limitations.
+      // The API route at /api/trigger-agent proxies the call and streams events
+      // back via Server-Sent Events.
+      const evtSource = new EventSource("/api/trigger-agent");
+
+      evtSource.onmessage = (e: MessageEvent<string>) => {
+        try {
+          const event: AgentEvent = JSON.parse(e.data);
+          pushEvent(event);
+
+          if (event.type === "DATA_RETRIEVED") {
+            dispatch({
+              type: "SET_PREMIUM_DATA",
+              data: event.data,
+            });
+
+            // Build active position from the PAYMENT_CONFIRMED data cached in event
+            const pos = event.data.position as LoanPosition | undefined;
+            if (pos) {
+              dispatch({ type: "SET_ACTIVE_POSITION", position: pos });
+            }
+
+            evtSource.close();
+            isAgentRunning.current = false;
+          }
+
+          if (event.type === "ERROR") {
+            evtSource.close();
+            isAgentRunning.current = false;
+          }
+        } catch {
+          // malformed SSE frame — ignore
+        }
+      };
+
+      evtSource.onerror = () => {
+        evtSource.close();
+        isAgentRunning.current = false;
+        dispatch({
+          type: "SET_ERROR",
+          error: "SSE connection to /api/trigger-agent failed",
+        });
+      };
+    } catch (err) {
+      isAgentRunning.current = false;
+      dispatch({
+        type: "SET_ERROR",
+        error: (err as Error).message,
+      });
+    }
+  }, [pushEvent]);
+
+  const resetSession = useCallback(() => {
+    isAgentRunning.current = false;
+    dispatch({ type: "RESET_SESSION" });
+  }, []);
+
+  return (
+    <AgentContext.Provider
+      value={{
+        state,
+        connectWallet,
+        disconnectWallet,
+        triggerAgent,
+        resetSession,
+        pushEvent,
+      }}
+    >
+      {children}
+    </AgentContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HOOK
+// ---------------------------------------------------------------------------
+
+export function useAgent(): AgentContextValue {
+  const ctx = useContext(AgentContext);
+  if (!ctx) throw new Error("useAgent must be used inside <AgentProvider>");
+  return ctx;
+}
