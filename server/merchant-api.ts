@@ -548,3 +548,225 @@ app.get(
     res.status(200).json(responseBody);
   }
 );
+
+// ── 404 catch-all ────────────────────────────────────────────────────────────
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({ error: "Not Found" });
+});
+
+// ── Global error handler ─────────────────────────────────────────────────────
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[Merchant] Unhandled error:", err.stack);
+  res.status(500).json({ error: "Internal Server Error", message: err.message });
+});
+
+// ---------------------------------------------------------------------------
+// FACILITATOR NODE (standalone process — runs separately from merchant)
+// ---------------------------------------------------------------------------
+// This section implements the Facilitator /settle endpoint.
+// In production this runs as a separate service, but is included here for
+// a single-repo reference implementation.
+
+import { broadcastSignedTx } from "./agent-client";
+import { StacksMainnet, StacksTestnet } from "@stacks/network";
+
+const facilitator = express();
+facilitator.use(helmet());
+facilitator.use(express.json());
+
+/** Validate incoming HMAC from the Merchant before processing */
+function validateFacilitatorHmac(
+  body: FacilitatorSettleRequest,
+  receivedHmac: string
+): boolean {
+  if (!CONFIG.facilitatorSecret) return true; // Skip validation in local dev
+  const canonical = JSON.stringify(body, Object.keys(body).sort());
+  const expected = createHash("sha256")
+    .update(CONFIG.facilitatorSecret + canonical)
+    .digest("hex");
+  // Constant-time comparison to prevent timing attacks
+  if (expected.length !== receivedHmac.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ receivedHmac.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Polls the Stacks node for transaction confirmation.
+ * Nakamoto fast-blocks confirm in ~5 seconds. We poll every 2 seconds
+ * with a maximum of 10 attempts (20 second total timeout).
+ */
+async function pollForConfirmation(
+  txid: string,
+  network: Caip2NetworkId,
+  maxAttempts = 10,
+  intervalMs = 2_000
+): Promise<{ block_height: number; confirmed_at: number }> {
+  const nodeUrl =
+    network === "stacks:1"
+      ? "https://api.hiro.so"
+      : "https://api.testnet.hiro.so";
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    try {
+      const response = await axios.get<{
+        tx_status: string;
+        block_height: number;
+        burn_block_time: number;
+      }>(`${nodeUrl}/extended/v1/tx/${txid}`, { timeout: 5_000 });
+
+      const { tx_status, block_height, burn_block_time } = response.data;
+
+      if (tx_status === "success" && block_height > 0) {
+        return {
+          block_height,
+          confirmed_at: burn_block_time,
+        };
+      }
+
+      if (tx_status === "abort_by_post_condition" || tx_status === "abort_by_response") {
+        throw new Error(
+          `Transaction aborted on-chain: status=${tx_status} txid=${txid}`
+        );
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) {
+        // Not yet in mempool — keep polling
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error(
+    `Transaction ${txid} not confirmed after ${maxAttempts} polling attempts (${(maxAttempts * intervalMs) / 1000}s)`
+  );
+}
+
+// ── Facilitator /settle endpoint ─────────────────────────────────────────────
+facilitator.post(
+  "/settle",
+  async (req: Request, res: Response) => {
+    const body = req.body as FacilitatorSettleRequest;
+    const receivedHmac = (req.headers["x-lend402-signature"] as string) ?? "";
+
+    // ── HMAC validation ───────────────────────────────────────────────────────
+    if (!validateFacilitatorHmac(body, receivedHmac)) {
+      res.status(401).json({ error: "Unauthorized", message: "HMAC mismatch" });
+      return;
+    }
+
+    // ── Field validation ──────────────────────────────────────────────────────
+    if (
+      !body.signed_tx_hex ||
+      !body.agent_address ||
+      !body.merchant_address ||
+      !body.amount_usdcx ||
+      !body.network ||
+      !body.nonce
+    ) {
+      res.status(400).json({ error: "Bad Request", message: "Missing required fields" });
+      return;
+    }
+
+    const network =
+      body.network === "stacks:1" ? new StacksMainnet() : new StacksTestnet();
+
+    // ── Broadcast transaction ─────────────────────────────────────────────────
+    let broadcastResult: Awaited<ReturnType<typeof broadcastSignedTx>>;
+    try {
+      broadcastResult = await broadcastSignedTx(body.signed_tx_hex, network);
+    } catch (err) {
+      console.error("[Facilitator] Broadcast failed:", err);
+      res.status(502).json({
+        error: "Broadcast Failed",
+        message: (err as Error).message,
+      });
+      return;
+    }
+
+    if ("error" in broadcastResult) {
+      console.error("[Facilitator] Node rejected tx:", broadcastResult);
+      res.status(400).json({
+        error: "Transaction Rejected",
+        message: broadcastResult.error,
+        reason: broadcastResult.reason ?? "unknown",
+      });
+      return;
+    }
+
+    const txid = broadcastResult.txid;
+    console.log(
+      `[Facilitator] Broadcast OK | txid=${txid} | agent=${body.agent_address} | amount=${body.amount_usdcx} USDCx`
+    );
+
+    // ── Poll for Nakamoto fast-block confirmation ─────────────────────────────
+    let confirmation: { block_height: number; confirmed_at: number };
+    try {
+      confirmation = await pollForConfirmation(txid, body.network);
+    } catch (err) {
+      console.error("[Facilitator] Confirmation polling failed:", err);
+      res.status(504).json({
+        error: "Confirmation Timeout",
+        message: (err as Error).message,
+        txid,
+      });
+      return;
+    }
+
+    console.log(
+      `[Facilitator] Confirmed | txid=${txid} | block=${confirmation.block_height} | t=${confirmation.confirmed_at}`
+    );
+
+    const settleResponse: FacilitatorSettleResponse = {
+      confirmed: true,
+      txid,
+      block_height: confirmation.block_height,
+      confirmed_at: confirmation.confirmed_at,
+    };
+
+    res.status(200).json(settleResponse);
+  }
+);
+
+// ── Facilitator health ────────────────────────────────────────────────────────
+facilitator.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok", service: "lend402-facilitator", timestamp: new Date().toISOString() });
+});
+
+// ---------------------------------------------------------------------------
+// SERVER BOOT
+// ---------------------------------------------------------------------------
+
+const MERCHANT_PORT = CONFIG.port;
+const FACILITATOR_PORT = parseInt(process.env.FACILITATOR_PORT ?? "3002", 10);
+
+app.listen(MERCHANT_PORT, () => {
+  console.log(
+    `[Merchant API] Listening on port ${MERCHANT_PORT} | network=${CONFIG.network} | merchant=${CONFIG.merchantAddress}`
+  );
+  console.log(
+    `[Merchant API] Premium data price: ${CONFIG.premiumDataPriceUsdcx / 1_000_000} USDCx`
+  );
+});
+
+facilitator.listen(FACILITATOR_PORT, () => {
+  console.log(
+    `[Facilitator] Listening on port ${FACILITATOR_PORT} | network=${CONFIG.network}`
+  );
+});
+
+export { app as merchantApp, facilitator as facilitatorApp };
+export type {
+  PaymentRequiredPayload,
+  PaymentSignaturePayload,
+  FacilitatorSettleRequest,
+  FacilitatorSettleResponse,
+  PaymentResponsePayload,
+  PremiumDataResponse,
+  MerchantConfig,
+};
