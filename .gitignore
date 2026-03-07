@@ -10,9 +10,10 @@ dist/
 build/
 
 # Environment — NEVER commit secrets
-.env
-.env.local
-.env.*.local
+.env*
+!.env.local.example
+!.env.example
+!.env.*.example
 
 # OS / Editor
 .DS_Store
@@ -34,6 +35,8 @@ yarn-error.log*
 # Misc
 .turbo/
 coverage/
+.cache/
+.vercel/
 
 # Root-level working files — moved to src/ and server/
 /AgentContext.tsx
