@@ -15,6 +15,11 @@ build/
 !.env.example
 !.env.*.example
 
+# Clarinet / deployment settings — keep local only
+settings/*.toml
+!settings/*.example.toml
+deployments/
+
 # OS / Editor
 .DS_Store
 *.swp
