@@ -1,0 +1,37 @@
+[project]
+name = 'lend402'
+description = 'Clarinet manifest for the Lend402 vault contract'
+authors = []
+telemetry = false
+cache_dir = '.cache'
+
+[[project.requirements]]
+contract_id = 'SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle'
+
+[[project.requirements]]
+contract_id = 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token'
+
+[[project.requirements]]
+contract_id = 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx'
+[contracts.lend402-vault]
+path = 'contracts/lend402-vault.clar'
+clarity_version = 4
+epoch = 'latest'
+[repl.analysis]
+passes = [
+    'call_checker',
+    'check_checker',
+]
+
+[repl.analysis.lints]
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+[repl.remote_data]
+enabled = true
+use_mainnet_wallets = true
+api_url = 'https://api.hiro.so'
