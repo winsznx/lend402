@@ -1,0 +1,10 @@
+# Copy to settings/Testnet.toml for local use.
+# Never commit real mnemonics or deployment settings back to git.
+
+[network]
+name = "testnet"
+stacks_node_rpc_address = "https://api.testnet.hiro.so"
+deployment_fee_rate = 10
+
+[accounts.deployer]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
