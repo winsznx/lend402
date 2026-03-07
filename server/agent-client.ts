@@ -5,11 +5,11 @@
 // =============================================================================
 // This module wraps Axios with a 402 Payment Required interceptor.
 // When a paywalled API rejects with 402, the interceptor:
-//   1. Decodes the `payment-required` header to extract USDCx cost + merchant
-//   2. Calls simulate-borrow (read-only) to determine required sBTC collateral
+//   1. Parses the JSON 402 response body to extract the payment challenge
+//   2. Calls simulate-borrow (read-only) or falls back to a live DIA quote
 //   3. Builds a Stacks contract-call to lend402-vault::borrow-and-pay
 //   4. Signs the serialized transaction with the agent's private key
-//   5. Base64-encodes the signed payload into `payment-signature`
+//   5. Base64-encodes the signed payload into payment-signature header (x402 V2)
 //   6. Retries the original request with the header attached
 // =============================================================================
 
@@ -21,88 +21,43 @@ import axios, {
 } from "axios";
 import {
   makeContractCall,
-  broadcastTransaction,
   uintCV,
+  stringAsciiCV,
   principalCV,
-  bufferCV,
-  deserializeTransaction,
   AnchorMode,
   PostConditionMode,
-  makeStandardSTXPostCondition,
   FungibleConditionCode,
   createAssetInfo,
   makeContractFungiblePostCondition,
   makeStandardFungiblePostCondition,
-  ContractCallOptions,
   StacksTransaction,
-  TxBroadcastResult,
-  TransactionVersion,
   SignedContractCallOptions,
 } from "@stacks/transactions";
 import { StacksMainnet, StacksTestnet, StacksNetwork } from "@stacks/network";
 import { callReadOnlyFunction, cvToJSON } from "@stacks/transactions";
-import { createHash } from "crypto";
+import { getServerStacksConfig } from "../src/lib/server-config";
+import {
+  DEFAULT_DIA_ORACLE_CONTRACT,
+  DIA_SBTC_PAIR,
+  splitContractId,
+} from "../src/lib/network";
+import {
+  buildPaymentSignatureHeader,
+  parsePaymentRequiredHeader,
+  parsePaymentResponseHeader,
+  PAYMENT_REQUIRED_HEADER,
+  PAYMENT_RESPONSE_HEADER,
+  PAYMENT_SIGNATURE_HEADER,
+} from "../src/lib/x402";
+import type {
+  Caip2NetworkId,
+  PaymentOption,
+  PaymentRequiredBody,
+} from "../src/types/x402";
 
 // ---------------------------------------------------------------------------
 // TYPES & INTERFACES
 // ---------------------------------------------------------------------------
-
-/** CAIP-2 network identifiers as per x402 V2 spec */
-export type Caip2NetworkId = "stacks:1" | "stacks:2147483648";
-
-/** Decoded content of the `payment-required` header (base64 JSON) */
-export interface PaymentRequiredPayload {
-  /** CAIP-2 network identifier */
-  network: Caip2NetworkId;
-  /** USDCx amount required, in 6-decimal units (e.g. 1_000_000 = $1.00) */
-  amount_usdcx: number;
-  /** Stacks principal of the merchant receiving payment */
-  merchant_address: string;
-  /** Human-readable description of the resource being purchased */
-  resource: string;
-  /** Unix timestamp when this payment challenge was issued */
-  issued_at: number;
-  /** Unix timestamp after which this challenge expires */
-  expires_at: number;
-  /** Merchant's challenge nonce to prevent replay attacks */
-  nonce: string;
-}
-
-/** Decoded content of the `payment-signature` header (base64 JSON) */
-export interface PaymentSignaturePayload {
-  /** Serialized, signed Stacks contract-call transaction (hex) */
-  signed_tx_hex: string;
-  /** Agent's Stacks address (for merchant verification) */
-  agent_address: string;
-  /** Echo of the merchant's nonce from PaymentRequiredPayload */
-  nonce: string;
-  /** CAIP-2 network */
-  network: Caip2NetworkId;
-  /** Unix timestamp when the signature was constructed */
-  signed_at: number;
-}
-
-/** Response from the facilitator /settle endpoint */
-export interface FacilitatorSettleResponse {
-  /** Whether the Nakamoto fast-block confirmed the transaction */
-  confirmed: boolean;
-  /** Stacks transaction ID (hex) */
-  txid: string;
-  /** Block height of confirmation */
-  block_height: number;
-  /** Unix timestamp of block confirmation */
-  confirmed_at: number;
-}
-
-/** Content of the `payment-response` header (base64 JSON) */
-export interface PaymentResponsePayload {
-  txid: string;
-  network: Caip2NetworkId;
-  block_height: number;
-  confirmed_at: number;
-  amount_usdcx: number;
-  merchant_address: string;
-}
 
 /** Lend402 vault simulate-borrow read-only response (decoded from CV) */
 interface SimulateBorrowResult {
@@ -152,7 +107,7 @@ export interface AgentEvent {
     | "SIMULATE_BORROW_OK"
     | "TX_BUILT"
     | "TX_SIGNED"
-    | "PAYMENT_SIGNATURE_ATTACHED"
+    | "PAYMENT_HEADER_ATTACHED"
     | "REQUEST_RETRIED"
     | "PAYMENT_CONFIRMED"
     | "DATA_RETRIEVED"
@@ -165,29 +120,90 @@ export interface AgentEvent {
 // CONSTANTS
 // ---------------------------------------------------------------------------
 
-const PAYMENT_REQUIRED_HEADER = "payment-required";
-const PAYMENT_SIGNATURE_HEADER = "payment-signature";
-const PAYMENT_RESPONSE_HEADER = "payment-response";
-
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 1;
+const COLLATERAL_RATIO_BPS = 15_000n;
+const PROTOCOL_FEE_BPS = 30n;
+const USDCX_PRICE_USD8 = 100_000_000n;
+const MAX_ORACLE_AGE_SECONDS = 60n;
 
 // ---------------------------------------------------------------------------
 // HELPER UTILITIES
 // ---------------------------------------------------------------------------
 
-/**
- * Base64-encode a JSON-serializable object into a header-safe string.
- */
-function encodeHeader<T>(payload: T): string {
-  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+function parseAmountUsdcx(option: PaymentOption): number {
+  const explicitPrice = option.extra?.priceUsdcx;
+  if (typeof explicitPrice === "number" && Number.isFinite(explicitPrice)) {
+    return explicitPrice;
+  }
+
+  if (/^\d+$/.test(option.amount)) {
+    return Number.parseInt(option.amount, 10);
+  }
+
+  return Math.round(Number.parseFloat(option.amount) * 1_000_000);
 }
 
-/**
- * Decode a base64-encoded JSON header value.
- */
-function decodeHeader<T>(headerValue: string): T {
-  return JSON.parse(Buffer.from(headerValue, "base64").toString("utf8")) as T;
+function getNetworkKey(
+  caip2Network: Caip2NetworkId
+): "mainnet" | "testnet" {
+  return caip2Network === "stacks:1" ? "mainnet" : "testnet";
+}
+
+function buildLiveBorrowPreview(
+  amountUsdcx: bigint,
+  sbtcPriceUsd8: bigint
+): SimulateBorrowResult {
+  const requiredUsdcxValue =
+    (amountUsdcx * COLLATERAL_RATIO_BPS) / 10_000n;
+  const requiredCollateralSbtc =
+    (requiredUsdcxValue * USDCX_PRICE_USD8 * 100n) / sbtcPriceUsd8;
+  const originationFeeUsdcx = (amountUsdcx * PROTOCOL_FEE_BPS) / 10_000n;
+
+  return {
+    required_collateral_sbtc: requiredCollateralSbtc,
+    origination_fee_usdcx: originationFeeUsdcx,
+    net_payment_usdcx: amountUsdcx - originationFeeUsdcx,
+    sbtc_price_usd8: sbtcPriceUsd8,
+    usdcx_price_usd8: USDCX_PRICE_USD8,
+    collateral_ratio_bps: COLLATERAL_RATIO_BPS,
+  };
+}
+
+async function getLiveSbtcPriceUsd8(config: AgentClientConfig): Promise<bigint> {
+  const contractId =
+    DEFAULT_DIA_ORACLE_CONTRACT[getNetworkKey(config.caip2Network)];
+  const { address, name } = splitContractId(contractId);
+
+  const result = await callReadOnlyFunction({
+    contractAddress: address,
+    contractName: name,
+    functionName: "get-value",
+    functionArgs: [stringAsciiCV(DIA_SBTC_PAIR)],
+    network: config.network,
+    senderAddress: config.agentAddress,
+  });
+
+  const json = cvToJSON(result);
+
+  if (json.type !== "(ok tuple)" && !json.success) {
+    throw new Error(`DIA get-value returned error: ${JSON.stringify(json)}`);
+  }
+
+  const value = json.value as Record<string, { value: string }>;
+  const priceUsd8 = BigInt(value.value.value);
+  const timestamp = BigInt(value.timestamp.value);
+  const now = BigInt(Math.floor(Date.now() / 1000));
+
+  if (priceUsd8 <= 0n) {
+    throw new Error("DIA oracle returned zero sBTC price");
+  }
+
+  if (now > timestamp && now - timestamp > MAX_ORACLE_AGE_SECONDS) {
+    throw new Error("DIA oracle price is stale");
+  }
+
+  return priceUsd8;
 }
 
 /**
@@ -211,41 +227,45 @@ function emit(
  * Calls the read-only `simulate-borrow` function on lend402-vault to determine
  * exact sBTC collateral required and net USDCx payment for a given borrow amount.
  *
- * This MUST be called before building the contract-call to ensure the collateral
- * argument matches the on-chain 150% ratio check exactly.
+ * If the vault's cached oracle quote is not warm, fall back to a direct DIA
+ * read-only quote and reproduce the same integer math off-chain.
  */
 async function simulateBorrow(
   amountUsdcx: bigint,
   config: AgentClientConfig
 ): Promise<SimulateBorrowResult> {
-  const result = await callReadOnlyFunction({
-    contractAddress: config.vaultContractAddress,
-    contractName: config.vaultContractName,
-    functionName: "simulate-borrow",
-    functionArgs: [uintCV(amountUsdcx)],
-    network: config.network,
-    senderAddress: config.agentAddress,
-  });
+  try {
+    const result = await callReadOnlyFunction({
+      contractAddress: config.vaultContractAddress,
+      contractName: config.vaultContractName,
+      functionName: "simulate-borrow",
+      functionArgs: [uintCV(amountUsdcx)],
+      network: config.network,
+      senderAddress: config.agentAddress,
+    });
 
-  const json = cvToJSON(result);
+    const json = cvToJSON(result);
 
-  // Unwrap the (ok { ... }) response
-  if (json.type !== "(ok tuple)" && !json.success) {
-    throw new Error(
-      `simulate-borrow returned error: ${JSON.stringify(json.value)}`
-    );
+    if (json.type !== "(ok tuple)" && !json.success) {
+      throw new Error(
+        `simulate-borrow returned error: ${JSON.stringify(json.value)}`
+      );
+    }
+
+    const v = json.value as Record<string, { value: string }>;
+
+    return {
+      required_collateral_sbtc: BigInt(v["required-collateral-sbtc"].value),
+      origination_fee_usdcx: BigInt(v["origination-fee-usdcx"].value),
+      net_payment_usdcx: BigInt(v["net-payment-usdcx"].value),
+      sbtc_price_usd8: BigInt(v["sbtc-price-usd8"].value),
+      usdcx_price_usd8: BigInt(v["usdcx-price-usd8"].value),
+      collateral_ratio_bps: BigInt(v["collateral-ratio-bps"].value),
+    };
+  } catch {
+    const sbtcPriceUsd8 = await getLiveSbtcPriceUsd8(config);
+    return buildLiveBorrowPreview(amountUsdcx, sbtcPriceUsd8);
   }
-
-  const v = json.value as Record<string, { value: string }>;
-
-  return {
-    required_collateral_sbtc: BigInt(v["required-collateral-sbtc"].value),
-    origination_fee_usdcx: BigInt(v["origination-fee-usdcx"].value),
-    net_payment_usdcx: BigInt(v["net-payment-usdcx"].value),
-    sbtc_price_usd8: BigInt(v["sbtc-price-usd8"].value),
-    usdcx_price_usd8: BigInt(v["usdcx-price-usd8"].value),
-    collateral_ratio_bps: BigInt(v["collateral-ratio-bps"].value),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -344,15 +364,14 @@ function attachPaymentInterceptor(
     // Pass-through successful responses
     (response: AxiosResponse) => {
       // If the response carries a payment-response header, decode and log it
-      const paymentResponseHeader =
-        response.headers[PAYMENT_RESPONSE_HEADER];
-      if (paymentResponseHeader) {
-        const pr = decodeHeader<PaymentResponsePayload>(paymentResponseHeader);
+      const paymentResponse = response.headers[PAYMENT_RESPONSE_HEADER];
+      if (paymentResponse) {
+        const pr = parsePaymentResponseHeader(paymentResponse);
         emit(config.onEvent, "PAYMENT_CONFIRMED", {
-          txid: pr.txid,
-          block_height: pr.block_height,
-          confirmed_at: pr.confirmed_at,
-          amount_usdcx: pr.amount_usdcx,
+          txid: pr.transaction,
+          block_height: pr.blockHeight,
+          confirmed_at: pr.confirmedAt,
+          payer: pr.payer,
         });
       }
       return response;
@@ -378,42 +397,44 @@ function attachPaymentInterceptor(
       }
       originalRequest._paymentRetryCount = retryCount + 1;
 
-      // ── Stage 1: Decode the payment-required challenge ──────────────────
-      const paymentRequiredRaw =
-        error.response.headers[PAYMENT_REQUIRED_HEADER];
-      if (!paymentRequiredRaw) {
+      // ── Stage 1: Parse the x402 V2 challenge ─────────────────────────────
+      const header402 = error.response.headers[PAYMENT_REQUIRED_HEADER];
+      let body402 = header402
+        ? parsePaymentRequiredHeader(header402)
+        : (error.response.data as PaymentRequiredBody);
+
+      if (!body402 || body402.x402Version !== 2 || !Array.isArray(body402.accepts)) {
         throw new Error(
-          "Lend402: 402 response missing `payment-required` header"
+          "Lend402: 402 response body is not a valid x402 V2 PaymentRequiredBody"
         );
       }
 
-      const challenge = decodeHeader<PaymentRequiredPayload>(paymentRequiredRaw);
-
-      emit(config.onEvent, "PAYMENT_REQUIRED_RECEIVED", {
-        resource: challenge.resource,
-        amount_usdcx: challenge.amount_usdcx,
-        merchant_address: challenge.merchant_address,
-        network: challenge.network,
-        nonce: challenge.nonce,
-        expires_at: challenge.expires_at,
-      });
-
-      // Validate challenge hasn't expired
-      const nowSec = Math.floor(Date.now() / 1000);
-      if (nowSec > challenge.expires_at) {
+      const option = body402.accepts.find(
+        (o) => o.scheme === "exact" && o.network === config.caip2Network
+      );
+      if (!option) {
         throw new Error(
-          `Lend402: payment-required challenge expired at ${challenge.expires_at}`
+          `Lend402: no acceptable payment option for network ${config.caip2Network}`
         );
       }
 
       // Validate network matches agent config
-      if (challenge.network !== config.caip2Network) {
+      if (option.network !== config.caip2Network) {
         throw new Error(
-          `Lend402: network mismatch — agent is on ${config.caip2Network}, merchant requires ${challenge.network}`
+          `Lend402: network mismatch — agent is on ${config.caip2Network}, merchant requires ${option.network}`
         );
       }
 
-      const amountUsdcx = BigInt(challenge.amount_usdcx);
+      const priceUsdcx = parseAmountUsdcx(option);
+
+      emit(config.onEvent, "PAYMENT_REQUIRED_RECEIVED", {
+        resource: body402.resource.url,
+        amount_usdcx: priceUsdcx,
+        merchant_address: option.payTo,
+        network: option.network,
+      });
+
+      const amountUsdcx = BigInt(priceUsdcx);
 
       // ── Stage 2: Simulate borrow to get exact collateral requirement ─────
       let simulation: SimulateBorrowResult;
@@ -438,7 +459,7 @@ function attachPaymentInterceptor(
       try {
         signedTx = await buildAndSignBorrowAndPay(
           amountUsdcx,
-          challenge.merchant_address,
+          option.payTo,
           simulation.required_collateral_sbtc,
           simulation.net_payment_usdcx,
           config
@@ -452,7 +473,7 @@ function attachPaymentInterceptor(
       emit(config.onEvent, "TX_BUILT", {
         amount_usdcx: amountUsdcx.toString(),
         collateral_sbtc: simulation.required_collateral_sbtc.toString(),
-        merchant: challenge.merchant_address,
+        merchant: option.payTo,
       });
 
       // ── Stage 4: Serialize the signed transaction ───────────────────────
@@ -463,28 +484,23 @@ function attachPaymentInterceptor(
         byte_length: serialized.length / 2,
       });
 
-      // ── Stage 5: Encode into payment-signature header ───────────────────
-      const signaturePayload: PaymentSignaturePayload = {
-        signed_tx_hex: serialized,
-        agent_address: config.agentAddress,
-        nonce: challenge.nonce,
-        network: config.caip2Network,
-        signed_at: Math.floor(Date.now() / 1000),
-      };
-
-      const encodedSignature = encodeHeader(signaturePayload);
-
-      emit(config.onEvent, "PAYMENT_SIGNATURE_ATTACHED", {
-        nonce: challenge.nonce,
-        signed_at: signaturePayload.signed_at,
-        agent_address: config.agentAddress,
+      // ── Stage 5: Encode into payment-signature header (x402 V2) ────────
+      const encodedPayment = buildPaymentSignatureHeader({
+        resource: body402.resource,
+        accepted: option,
+        signedTransactionHex: serialized,
       });
 
-      // ── Stage 6: Retry original request with payment-signature ───────────
+      emit(config.onEvent, "PAYMENT_HEADER_ATTACHED", {
+        agent_address: config.agentAddress,
+        resource: body402.resource.url,
+      });
+
+      // ── Stage 6: Retry original request with payment-signature header ───
       if (!originalRequest.headers) {
         originalRequest.headers = {} as InternalAxiosRequestConfig["headers"];
       }
-      originalRequest.headers[PAYMENT_SIGNATURE_HEADER] = encodedSignature;
+      originalRequest.headers[PAYMENT_SIGNATURE_HEADER] = encodedPayment;
 
       emit(config.onEvent, "REQUEST_RETRIED", {
         url: originalRequest.url,
@@ -513,10 +529,10 @@ function attachPaymentInterceptor(
  *   caip2Network: "stacks:1",
  *   vaultContractAddress: "SP3VAULT...",
  *   vaultContractName: "lend402-vault",
- *   sbtcContractAddress: "SP2PABAF9...",
+ *   sbtcContractAddress: "SM3VDXK3W...",
  *   sbtcContractName: "sbtc-token",
- *   usdcxContractAddress: "SP3K8BC0P...",
- *   usdcxContractName: "usdc-token",
+ *   usdcxContractAddress: "SP120SBRB...",
+ *   usdcxContractName: "usdcx",
  *   onEvent: (event) => dashboard.push(event),
  * });
  *
@@ -544,51 +560,36 @@ export function withPaymentInterceptor(
 }
 
 // ---------------------------------------------------------------------------
-// STANDALONE EXPORT: broadcastSignedTx
-// ---------------------------------------------------------------------------
-
-/**
- * Broadcasts a signed Stacks transaction to the network and returns the txid.
- * Used by the Facilitator node — exported here for shared use.
- */
-export async function broadcastSignedTx(
-  signedTxHex: string,
-  network: StacksNetwork
-): Promise<TxBroadcastResult> {
-  const tx = deserializeTransaction(signedTxHex);
-  const result = await broadcastTransaction(tx, network);
-  return result;
-}
-
-// ---------------------------------------------------------------------------
 // NETWORK FACTORY HELPERS
 // ---------------------------------------------------------------------------
 
 export function mainnetConfig(
-  privateKey: string,
-  agentAddress: string
+  _privateKey: string,
+  _agentAddress: string
 ): Pick<AgentClientConfig, "network" | "caip2Network" | "vaultContractAddress" | "vaultContractName" | "sbtcContractAddress" | "sbtcContractName" | "usdcxContractAddress" | "usdcxContractName"> {
+  const config = getServerStacksConfig();
   return {
     network: new StacksMainnet(),
-    caip2Network: "stacks:1",
-    vaultContractAddress: "SP3VAULT000LEND402MAINNETADDRESS",
-    vaultContractName: "lend402-vault",
-    sbtcContractAddress: "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9",
-    sbtcContractName: "sbtc-token",
-    usdcxContractAddress: "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9",
-    usdcxContractName: "usdc-token",
+    caip2Network: config.caip2NetworkId,
+    vaultContractAddress: config.vaultContractAddress,
+    vaultContractName: config.vaultContractName,
+    sbtcContractAddress: config.sbtcContractAddress,
+    sbtcContractName: config.sbtcContractName,
+    usdcxContractAddress: config.usdcxContractAddress,
+    usdcxContractName: config.usdcxContractName,
   };
 }
 
 export function testnetConfig(): Pick<AgentClientConfig, "network" | "caip2Network" | "vaultContractAddress" | "vaultContractName" | "sbtcContractAddress" | "sbtcContractName" | "usdcxContractAddress" | "usdcxContractName"> {
+  const config = getServerStacksConfig();
   return {
     network: new StacksTestnet(),
-    caip2Network: "stacks:2147483648",
-    vaultContractAddress: "ST3VAULT000LEND402TESTNETADDRESS",
-    vaultContractName: "lend402-vault",
-    sbtcContractAddress: "ST2PABAF9FTAJYNFZH93XENAJ8FVY99RRM4CB2WDX",
-    sbtcContractName: "sbtc-token",
-    usdcxContractAddress: "ST3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3CB2W5",
-    usdcxContractName: "usdc-token",
+    caip2Network: config.caip2NetworkId,
+    vaultContractAddress: config.vaultContractAddress,
+    vaultContractName: config.vaultContractName,
+    sbtcContractAddress: config.sbtcContractAddress,
+    sbtcContractName: config.sbtcContractName,
+    usdcxContractAddress: config.usdcxContractAddress,
+    usdcxContractName: config.usdcxContractName,
   };
 }
