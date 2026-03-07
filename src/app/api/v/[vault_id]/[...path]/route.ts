@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  type Address,
   addressFromHashMode,
   addressToString,
+  ClarityType,
   deserializeTransaction,
+  PayloadType,
   txidFromData,
 } from "@stacks/transactions";
 import {
@@ -27,6 +30,7 @@ import {
   verifyXPayment,
 } from "@/lib/x402";
 import { normalizeTxid } from "@/lib/network";
+import { getServerStacksConfig } from "@/lib/server-config";
 import { settleStacksPayment } from "@/lib/settlement";
 
 export const runtime = "nodejs";
@@ -34,6 +38,7 @@ export const dynamic = "force-dynamic";
 
 const RATE_WINDOW_MS = 60_000;
 const PROXY_TIMEOUT_MS = 30_000;
+const CHALLENGE_RATE_LIMIT = 120;
 
 interface RouteParams {
   params: Promise<{ vault_id: string; path?: string[] }>;
@@ -64,11 +69,72 @@ function getCallerIp(req: NextRequest): string {
   );
 }
 
+function validateBorrowAndPayTransaction(params: {
+  signedTransactionHex: string;
+  priceUsdcx: number;
+  providerAddress: string;
+}) {
+  const stacksConfig = getServerStacksConfig();
+  const tx = deserializeTransaction(params.signedTransactionHex);
+  const spendingCondition = tx.auth.spendingCondition;
+  const payerAddress = addressToString(
+    addressFromHashMode(spendingCondition.hashMode, tx.version, spendingCondition.signer)
+  );
+  const txid = normalizeTxid(txidFromData(Buffer.from(params.signedTransactionHex, "hex")));
+  const payload = tx.payload;
+
+  if (payload.payloadType !== PayloadType.ContractCall) {
+    throw new Error("Signed transaction is not a contract-call");
+  }
+
+  const contractAddress = addressToString(payload.contractAddress);
+  if (
+    contractAddress !== stacksConfig.vaultContractAddress ||
+    payload.contractName.content !== stacksConfig.vaultContractName
+  ) {
+    throw new Error("Signed transaction targets the wrong vault contract");
+  }
+
+  if (payload.functionName.content !== "borrow-and-pay") {
+    throw new Error("Signed transaction must call borrow-and-pay");
+  }
+
+  if (payload.functionArgs.length !== 3) {
+    throw new Error("borrow-and-pay transaction has unexpected argument count");
+  }
+
+  const amountArg = payload.functionArgs[0] as { type: ClarityType; value?: bigint };
+  const merchantArg = payload.functionArgs[1] as {
+    type: ClarityType;
+    address?: unknown;
+  };
+  const collateralArg = payload.functionArgs[2] as { type: ClarityType; value?: bigint };
+
+  if (amountArg.type !== ClarityType.UInt || amountArg.value !== BigInt(params.priceUsdcx)) {
+    throw new Error("Signed transaction amount does not match the vault price");
+  }
+
+  if (merchantArg.type !== ClarityType.PrincipalStandard || !merchantArg.address) {
+    throw new Error("Signed transaction merchant is not a standard principal");
+  }
+
+  if (addressToString(merchantArg.address as Address) !== params.providerAddress) {
+    throw new Error("Signed transaction merchant does not match the vault provider");
+  }
+
+  if (collateralArg.type !== ClarityType.UInt || !collateralArg.value || collateralArg.value <= 0n) {
+    throw new Error("Signed transaction collateral must be greater than zero");
+  }
+
+  return { tx, txid, payerAddress };
+}
+
 async function handleRequest(
   req: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse> {
   const { vault_id, path = [] } = await params;
+  const callerIp = getCallerIp(req);
 
   const globalOk = await checkGlobalRateLimit().catch(() => true);
   if (!globalOk) {
@@ -105,6 +171,18 @@ async function handleRequest(
   const legacyXPaymentRaw = req.headers.get("x-payment");
 
   if (!paymentSignatureRaw && !legacyXPaymentRaw) {
+    const anonymousRate = await checkAndIncrRateLimit(
+      `challenge:${vault.vault_id}:${callerIp}`,
+      CHALLENGE_RATE_LIMIT,
+      RATE_WINDOW_MS
+    ).catch(() => ({ allowed: true, count: 0 }));
+
+    if (!anonymousRate.allowed) {
+      return jsonError("Challenge rate limit exceeded", 429, {
+        retryAfterMs: RATE_WINDOW_MS,
+      });
+    }
+
     return NextResponse.json(
       paymentRequiredBody,
       {
@@ -140,14 +218,13 @@ async function handleRequest(
   let payerAddress: string;
   let txid: string;
   try {
-    const tx = deserializeTransaction(signedTransactionHex);
-    const spendingCondition = tx.auth.spendingCondition;
-    payerAddress = addressToString(
-      addressFromHashMode(spendingCondition.hashMode, tx.version, spendingCondition.signer)
-    );
-    txid = normalizeTxid(txidFromData(Buffer.from(signedTransactionHex, "hex")));
+    ({ payerAddress, txid } = validateBorrowAndPayTransaction({
+      signedTransactionHex,
+      priceUsdcx: vault.price_usdcx,
+      providerAddress: vault.provider_address,
+    }));
   } catch (error) {
-    return jsonError(`Unable to decode signed transaction: ${(error as Error).message}`, 400);
+    return jsonError(`Invalid signed transaction: ${(error as Error).message}`, 400);
   }
 
   const rate = await checkAndIncrRateLimit(
@@ -239,7 +316,7 @@ async function handleRequest(
   proxyHeaders.delete("authorization");
   proxyHeaders.delete("connection");
   proxyHeaders.delete("transfer-encoding");
-  proxyHeaders.set("x-forwarded-for", getCallerIp(req));
+  proxyHeaders.set("x-forwarded-for", callerIp);
   proxyHeaders.set("x-lend402-vault-id", vault.vault_id);
   proxyHeaders.set("x-lend402-payer", settlement.payer);
   proxyHeaders.set("x-lend402-txid", txid);
