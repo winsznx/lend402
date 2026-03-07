@@ -140,7 +140,9 @@ const INITIAL_STATE: AgentState = {
       id: "boot-1",
       timestamp: Date.now() + 1,
       level: "system",
-      text: `Protocol: x402 V2 | Network: ${PUBLIC_CAIP2_NETWORK} (${PUBLIC_STACKS_NETWORK}) | Vault: ${PUBLIC_VAULT_CONTRACT_ID}`,
+      text: `Protocol: x402 V2 | Network: ${PUBLIC_CAIP2_NETWORK} (${PUBLIC_STACKS_NETWORK}) | Vault: ${
+        PUBLIC_VAULT_CONTRACT_ID || "UNCONFIGURED"
+      }`,
     },
     {
       id: "boot-2",
@@ -482,6 +484,18 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
 const appConfig = new AppConfig(["store_write", "publish_data"]);
 const userSession = new UserSession({ appConfig });
 
+function getAppDetails() {
+  const icon =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/favicon.svg`
+      : "https://lend402.xyz/favicon.svg";
+
+  return {
+    name: "Lend402 Command Center",
+    icon,
+  };
+}
+
 function getConnectedAddress(): string {
   const profile = userSession.loadUserData();
   const walletNetwork = PUBLIC_STACKS_NETWORK === "mainnet" ? "mainnet" : "testnet";
@@ -512,7 +526,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   // ── Wallet connect ─────────────────────────────────────────────────────────
   const connectWallet = useCallback(() => {
     showConnect({
-      appDetails: { name: "Lend402 Command Center", icon: "/favicon.ico" },
+      appDetails: getAppDetails(),
+      manifestPath: "/manifest.json",
       redirectTo:
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
@@ -520,6 +535,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       onFinish: () => {
         const address = getConnectedAddress();
         dispatch({ type: "WALLET_CONNECTED", address });
+      },
+      onCancel: () => {
+        dispatch({
+          type: "PUSH_TERMINAL_LINE",
+          line: {
+            id: lineId(),
+            timestamp: Date.now(),
+            level: "warn",
+            text: "[WALLET] Connection request cancelled or wallet did not respond.",
+          },
+        });
       },
       userSession,
     });
@@ -540,6 +566,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         showSignMessage({
           message,
+          appDetails: getAppDetails(),
           userSession,
           network: PUBLIC_STACKS_NETWORK,
           stxAddress: getConnectedAddress(),
