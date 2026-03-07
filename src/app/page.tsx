@@ -9,12 +9,15 @@
 // =============================================================================
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { AgentProvider, useAgent } from "@/context/AgentContext";
 import AgentTerminal from "@/components/AgentTerminal";
 import TreasuryDashboard from "@/components/TreasuryDashboard";
+import VaultCallInput from "@/components/VaultCallInput";
 import GlassCard from "@/components/ui/GlassCard";
 import Button from "@/components/ui/Button";
 import { Chip, Pill } from "@/components/ui/Chip";
+import { PUBLIC_STACKS_NETWORK } from "@/lib/public-config";
 
 // ---------------------------------------------------------------------------
 // THEME PROVIDER — manages dark class on <html> with localStorage persistence
@@ -137,7 +140,20 @@ function Header() {
             <div className="hidden lg:flex items-center gap-3 pl-3 border-l border-slate-200 dark:border-slate-800">
               <Chip label="CHAIN" value="NAKAMOTO" color="#a78bfa" />
               <Chip label="PROTOCOL" value="x402 V2" color="#f59e0b" />
-              <Chip label="NETWORK" value="TESTNET" color="#22d3ee" live />
+              <Chip label="NETWORK" value={PUBLIC_STACKS_NETWORK.toUpperCase()} color="#22d3ee" live />
+            </div>
+
+            {/* Vault nav links */}
+            <div className="hidden md:flex items-center gap-1 pl-3 border-l border-slate-200 dark:border-slate-800">
+              <Link href="/vault/new" className="font-mono text-[10px] tracking-widest text-slate-500 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 uppercase">
+                + API Vault
+              </Link>
+              <Link href="/vault/dashboard" className="font-mono text-[10px] tracking-widest text-slate-500 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 uppercase">
+                My Vaults
+              </Link>
+              <Link href="/docs" className="font-mono text-[10px] tracking-widest text-slate-500 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 uppercase">
+                Docs
+              </Link>
             </div>
           </div>
 
@@ -386,7 +402,7 @@ function FlowDiagram() {
 // TRIGGER BUTTON (primary action)
 // ---------------------------------------------------------------------------
 
-function TriggerButton() {
+function TriggerButton({ targetUrl }: { targetUrl: string }) {
   const { state, triggerAgent, resetSession } = useAgent();
   const { phase } = state;
 
@@ -404,7 +420,7 @@ function TriggerButton() {
       )}
 
       <button
-        onClick={isIdle ? triggerAgent : undefined}
+        onClick={isIdle ? () => triggerAgent(targetUrl || undefined) : undefined}
         disabled={isRunning}
         className={[
           "relative inline-flex items-center gap-2.5 px-6 py-3 rounded-lg",
@@ -507,9 +523,9 @@ function ErrorBanner() {
 
 function ContractRefBar() {
   const refs = [
-    { label: "VAULT CONTRACT", value: "lend402-vault.clar", color: "#a78bfa" },
-    { label: "FUNCTION",       value: "borrow-and-pay",    color: "#f59e0b" },
-    { label: "POST-CONDITIONS",value: "PostConditionMode.DENY", color: "#f87171" },
+    { label: "VAULT CONTRACT", value: "contracts/lend402-vault.clar", color: "#a78bfa" },
+    { label: "FUNCTION", value: "borrow-and-pay", color: "#f59e0b" },
+    { label: "POST-CONDITIONS", value: "PostConditionMode.Deny", color: "#f87171" },
   ] as const;
 
   return (
@@ -564,7 +580,7 @@ function ArchitectureFootnote() {
           <span className="text-amber-500 dark:text-amber-400 font-bold">borrow-and-pay</span>
           {" "}contract-call with strict{" "}
           <span className="text-red-500 dark:text-red-400 font-bold">PostConditionMode.DENY</span>
-          {" "}→ signs with agent key → Merchant API validates nonce → Facilitator broadcasts to
+          {" "}→ signs with agent key → gateway validates the x402 payload → settlement broadcasts to
           Stacks mempool →{" "}
           <span className="text-cyan-500 dark:text-cyan-400 font-bold">Nakamoto fast-block</span>
           {" "}confirms sBTC lock + USDCx route in{" "}
@@ -583,6 +599,8 @@ function ArchitectureFootnote() {
 // ---------------------------------------------------------------------------
 
 function CommandCenterDashboard() {
+  const [targetUrl, setTargetUrl] = useState("");
+
   return (
     <div
       className="min-h-screen flex flex-col font-mono
@@ -616,15 +634,19 @@ function CommandCenterDashboard() {
               Agent Command Center
             </h1>
             <p className="font-mono text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
-              Monitor your AI agent's JIT credit lifecycle on the Stacks blockchain.
-              sBTC collateral → USDCx borrow → merchant payment — in a single Nakamoto fast-block.
+              Lend402 is the Stacks-native payment and credit rail for agentic APIs.
+              When a provider returns HTTP 402, the agent can finance the call just in time with
+              sBTC-backed USDCx and settle on-chain before the response is released.
             </p>
           </div>
-          <TriggerButton />
+          <TriggerButton targetUrl={targetUrl} />
         </div>
 
         {/* ── Flow diagram ── */}
         <FlowDiagram />
+
+        {/* ── Vault target override ── */}
+        <VaultCallInput onTrigger={setTargetUrl} />
 
         {/* ── Error banner (conditional) ── */}
         <ErrorBanner />
@@ -655,9 +677,15 @@ function CommandCenterDashboard() {
         bg-white/40 dark:bg-slate-950/60 backdrop-blur-sm">
         <div className="max-w-screen-xl mx-auto px-4 md:px-6 h-11 flex items-center justify-between">
           <span className="font-mono text-[9px] tracking-widest text-slate-400 dark:text-slate-700 uppercase">
-            Lend402 — JIT Micro-Lending for AI Agents · Stacks Nakamoto Release
+            Lend402 · x402 Payment + JIT Credit for Agentic APIs on Stacks
           </span>
           <div className="flex items-center gap-4">
+            <Link
+              href="/docs"
+              className="font-mono text-[9px] tracking-widest text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-500 transition-colors uppercase"
+            >
+              Docs
+            </Link>
             <a
               href="https://docs.stacks.co"
               target="_blank"

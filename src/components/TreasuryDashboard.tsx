@@ -13,6 +13,7 @@ import React, { useMemo } from "react";
 import { useAgent, LoanPosition, SimulatePreview } from "@/context/AgentContext";
 import GlassCard from "@/components/ui/GlassCard";
 import { Pill } from "@/components/ui/Chip";
+import { getExplorerTxUrl } from "@/lib/public-config";
 
 // ---------------------------------------------------------------------------
 // FORMATTERS
@@ -28,7 +29,7 @@ function formatUsdcx(micro: bigint | number): string {
 }
 
 function explorerUrl(txid: string): string {
-  return `https://explorer.hiro.so/txid/${txid}?chain=testnet`;
+  return getExplorerTxUrl(txid);
 }
 
 function truncateTxid(txid: string): string {

@@ -14,8 +14,17 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { showConnect, UserSession, AppConfig } from "@stacks/connect";
-import { StacksTestnet } from "@stacks/network";
+import {
+  showConnect,
+  showSignMessage,
+  UserSession,
+  AppConfig,
+} from "@stacks/connect";
+import {
+  PUBLIC_CAIP2_NETWORK,
+  PUBLIC_STACKS_NETWORK,
+  PUBLIC_VAULT_CONTRACT_ID,
+} from "@/lib/public-config";
 
 // ---------------------------------------------------------------------------
 // TYPES (mirrored from agent-client.ts — kept in sync manually or via shared pkg)
@@ -27,10 +36,12 @@ export type AgentEventType =
   | "SIMULATE_BORROW_OK"
   | "TX_BUILT"
   | "TX_SIGNED"
-  | "PAYMENT_SIGNATURE_ATTACHED"
+  | "PAYMENT_HEADER_ATTACHED"
   | "REQUEST_RETRIED"
   | "PAYMENT_CONFIRMED"
   | "DATA_RETRIEVED"
+  | "VAULT_REGISTERED"
+  | "VAULT_CALL_RECEIVED"
   | "ERROR";
 
 export interface AgentEvent {
@@ -129,7 +140,7 @@ const INITIAL_STATE: AgentState = {
       id: "boot-1",
       timestamp: Date.now() + 1,
       level: "system",
-      text: "Protocol: x402 V2 | Network: stacks:2147483648 (testnet) | Vault: lend402-vault.clar",
+      text: `Protocol: x402 V2 | Network: ${PUBLIC_CAIP2_NETWORK} (${PUBLIC_STACKS_NETWORK}) | Vault: ${PUBLIC_VAULT_CONTRACT_ID}`,
     },
     {
       id: "boot-2",
@@ -245,7 +256,8 @@ interface AgentContextValue {
   state: AgentState;
   connectWallet: () => void;
   disconnectWallet: () => void;
-  triggerAgent: () => Promise<void>;
+  requestSignature: (message: string) => Promise<{ signature: string; publicKey: string }>;
+  triggerAgent: (targetUrl?: string) => Promise<void>;
   resetSession: () => void;
   pushEvent: (event: AgentEvent) => void;
 }
@@ -270,7 +282,7 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           id: lineId(),
           timestamp: ts,
           level: "info",
-          text: `[INFO] Requesting premium data from ${event.data.url ?? "merchant API"}...`,
+          text: `[INFO] Requesting premium data from ${event.data.url ?? "vault gateway"}...`,
           data: event.data,
         },
       ];
@@ -281,7 +293,7 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           id: lineId(),
           timestamp: ts,
           level: "warn",
-          text: `[402]  Payment Required intercepted.`,
+          text: `[402]  x402 V2 402 body received. Payment Required.`,
           data: event.data,
         },
         {
@@ -365,17 +377,39 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           id: lineId(),
           timestamp: ts + 1,
           level: "info",
-          text: `        Embedding into payment-signature header (base64)...`,
+          text: `        Encoding into payment-signature header (base64, x402Version:2)...`,
         },
       ];
 
-    case "PAYMENT_SIGNATURE_ATTACHED":
+    case "PAYMENT_HEADER_ATTACHED":
       return [
         {
           id: lineId(),
           timestamp: ts,
           level: "info",
-          text: `[SEND]  payment-signature header attached. Retrying request...`,
+          text: `[SEND]  payment-signature header (x402 V2) attached. Retrying request...`,
+          data: event.data,
+        },
+      ];
+
+    case "VAULT_REGISTERED":
+      return [
+        {
+          id: lineId(),
+          timestamp: ts,
+          level: "success",
+          text: `[VAULT] API Vault registered. ID: ${event.data.vaultId ?? event.data.vault_id ?? "—"} → ${event.data.wrappedUrl ?? "—"}`,
+          data: event.data,
+        },
+      ];
+
+    case "VAULT_CALL_RECEIVED":
+      return [
+        {
+          id: lineId(),
+          timestamp: ts,
+          level: "info",
+          text: `[VAULT] Incoming x402 call | Vault: ${event.data.vault_id ?? "—"} | Payer: ${(event.data.payer as string)?.slice(0, 12) ?? "—"}...`,
           data: event.data,
         },
       ];
@@ -386,7 +420,7 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           id: lineId(),
           timestamp: ts,
           level: "info",
-          text: `[RETRY] Forwarding signed payload → Merchant API → Facilitator → Stacks mempool...`,
+          text: `[RETRY] Forwarding signed payload → Gateway → Stacks mempool...`,
           data: event.data,
         },
         {
@@ -448,6 +482,17 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
 const appConfig = new AppConfig(["store_write", "publish_data"]);
 const userSession = new UserSession({ appConfig });
 
+function getConnectedAddress(): string {
+  const profile = userSession.loadUserData();
+  const walletNetwork = PUBLIC_STACKS_NETWORK === "mainnet" ? "mainnet" : "testnet";
+  return (
+    profile.profile?.stxAddress?.[walletNetwork] ??
+    profile.profile?.stxAddress?.mainnet ??
+    profile.profile?.stxAddress?.testnet ??
+    ""
+  );
+}
+
 // ---------------------------------------------------------------------------
 // PROVIDER
 // ---------------------------------------------------------------------------
@@ -459,11 +504,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   // Re-hydrate wallet on mount
   useEffect(() => {
     if (userSession.isUserSignedIn()) {
-      const profile = userSession.loadUserData();
-      const address =
-        profile.profile?.stxAddress?.testnet ??
-        profile.profile?.stxAddress?.mainnet ??
-        "";
+      const address = getConnectedAddress();
       if (address) dispatch({ type: "WALLET_CONNECTED", address });
     }
   }, []);
@@ -472,13 +513,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const connectWallet = useCallback(() => {
     showConnect({
       appDetails: { name: "Lend402 Command Center", icon: "/favicon.ico" },
-      redirectTo: "/",
+      redirectTo:
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/",
       onFinish: () => {
-        const profile = userSession.loadUserData();
-        const address =
-          profile.profile?.stxAddress?.testnet ??
-          profile.profile?.stxAddress?.mainnet ??
-          "";
+        const address = getConnectedAddress();
         dispatch({ type: "WALLET_CONNECTED", address });
       },
       userSession,
@@ -489,6 +529,26 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     userSession.signUserOut("/");
     dispatch({ type: "WALLET_DISCONNECTED" });
   }, []);
+
+  const requestSignature = useCallback(
+    (message: string) =>
+      new Promise<{ signature: string; publicKey: string }>((resolve, reject) => {
+        if (!userSession.isUserSignedIn()) {
+          reject(new Error("Connect a wallet before signing"));
+          return;
+        }
+
+        showSignMessage({
+          message,
+          userSession,
+          network: PUBLIC_STACKS_NETWORK,
+          stxAddress: getConnectedAddress(),
+          onFinish: (data) => resolve(data),
+          onCancel: () => reject(new Error("Signature request cancelled")),
+        });
+      }),
+    []
+  );
 
   // ── Push raw AgentEvent (from agent-client onEvent callback) ───────────────
   const pushEvent = useCallback((event: AgentEvent) => {
@@ -545,19 +605,18 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // ── Trigger Agent: fires the Axios request to merchant API ────────────────
-  const triggerAgent = useCallback(async () => {
+  // ── Trigger Agent: opens the SSE stream that runs the vault request ───────
+  const triggerAgent = useCallback(async (targetUrl?: string) => {
     if (isAgentRunning.current) return;
     isAgentRunning.current = true;
 
     dispatch({ type: "SET_PHASE", phase: "REQUESTING" });
 
     try {
-      // Dynamic import: agent-client runs Node-style but we call it from Next.js
-      // API route to avoid browser-side Stacks.js limitations.
-      // The API route at /api/trigger-agent proxies the call and streams events
-      // back via Server-Sent Events.
-      const evtSource = new EventSource("/api/trigger-agent");
+      const sseUrl = targetUrl
+        ? `/api/trigger-agent?targetUrl=${encodeURIComponent(targetUrl)}`
+        : "/api/trigger-agent";
+      const evtSource = new EventSource(sseUrl);
 
       evtSource.onmessage = (e: MessageEvent<string>) => {
         try {
@@ -617,6 +676,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         state,
         connectWallet,
         disconnectWallet,
+        requestSignature,
         triggerAgent,
         resetSession,
         pushEvent,

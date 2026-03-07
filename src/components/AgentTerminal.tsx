@@ -15,6 +15,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { useAgent, TerminalLine, AgentPhase } from "@/context/AgentContext";
+import { PUBLIC_CAIP2_NETWORK } from "@/lib/public-config";
 
 // ---------------------------------------------------------------------------
 // TIME FORMATTER
@@ -292,7 +293,7 @@ export default function AgentTerminal() {
         }}
       >
         <div className="flex items-center gap-4">
-          <StatusPill label="NETWORK" value="stacks:2147483648" color="#a78bfa" />
+          <StatusPill label="NETWORK" value={PUBLIC_CAIP2_NETWORK} color="#a78bfa" />
           <StatusPill label="BLOCK"   value="~5s"               color="#22d3ee" />
           <StatusPill label="PROTO"   value="x402 V2"           color="#f59e0b" />
         </div>
