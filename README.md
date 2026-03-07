@@ -82,6 +82,8 @@ For an app service running on Railway:
 
 Railway exposes `DATABASE_URL` for Postgres and `REDIS_URL` for Redis. Service reference variables use the `${{ServiceName.VAR_NAME}}` format.
 
+If the app is running on Vercel, do not use `railway.internal` hosts. Use Railway's public or proxied connection strings as the values for `DATABASE_URL` and `REDIS_URL`.
+
 If you want the on-chain read-only quote path to stay warm without waiting for the agent SDK fallback:
 
 - Set `LEND402_CACHE_REFRESH_PRIVATE_KEY` to a dedicated relayer wallet.
@@ -103,8 +105,16 @@ Copy `.env.local.example` to `.env.local` and provide:
 - `PRICE_CACHE_REFRESH_SECRET` or `CRON_SECRET` if you want to protect the internal warmer route
 - `DATABASE_URL`
 - `REDIS_URL`
-- `DEFAULT_VAULT_URL`
+- `DEFAULT_VAULT_URL` only if you want the built-in demo agent to target one specific vault by default
 - `NEXT_PUBLIC_GATEWAY_BASE_URL`
+
+For Clarinet deployment settings, copy:
+
+- `settings/Mainnet.example.toml` -> `settings/Mainnet.toml`
+- `settings/Testnet.example.toml` -> `settings/Testnet.toml`
+- `settings/Devnet.example.toml` -> `settings/Devnet.toml`
+
+Those local `settings/*.toml` files are intentionally gitignored. Never commit real mnemonics.
 
 ## Judging Alignment
 
