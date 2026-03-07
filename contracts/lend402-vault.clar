@@ -7,7 +7,7 @@
 ;; OVERVIEW:
 ;;   AI agents hold sBTC as a treasury asset. When a paywalled API returns a
 ;;   402 Payment Required demanding USDCx, this vault atomically:
-;;     1. Verifies sBTC/USDCx oracle price (enforcing 150% collateral ratio)
+;;     1. Verifies the live sBTC/USD oracle price (enforcing 150% collateral ratio)
 ;;     2. Locks the agent's sBTC as collateral
 ;;     3. Draws USDCx from the LP liquidity pool
 ;;     4. Routes the exact USDCx amount directly to the merchant
@@ -38,17 +38,9 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 1: ORACLE TRAIT
+;; SECTION 1: ORACLE DEPENDENCY
 ;; ---------------------------------------------------------------------------
-;; Redstone / Pyth-on-Stacks adapter interface.
-;; Returns price scaled to 8 decimal places (e.g. 1 sBTC = 6500000000000 = $65,000.00000000)
-
-(define-trait oracle-trait
-  (
-    ;; Returns (ok { price: uint, decimals: uint, timestamp: uint })
-    (get-price (string-ascii 12)) (response { price: uint, decimals: uint, timestamp: uint } uint)
-  )
-)
+;; DIA publishes Stacks-native spot prices as { value, timestamp } tuples.
 
 ;; ---------------------------------------------------------------------------
 ;; SECTION 2: CONSTANTS
@@ -59,19 +51,19 @@
 
 ;; SIP-010 token contract addresses (Stacks mainnet)
 ;; USDCx: Circle xReserve native USDC on Stacks
-(define-constant USDCX-CONTRACT   'SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9.usdc-token)
+(define-constant USDCX-CONTRACT   'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx)
 ;; sBTC: Non-custodial 1:1 Bitcoin-backed asset
-(define-constant SBTC-CONTRACT    'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.sbtc-token)
+(define-constant SBTC-CONTRACT    'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token)
 
-;; Oracle contract (Redstone price feed adapter)
-(define-constant ORACLE-CONTRACT  'SP2C2YFP12AJZB4MABJBAJ55XECVS7E4PMMZ89YZR.redstone-oracle)
+;; DIA oracle contract for sBTC/USD spot pricing.
+(define-constant DIA-ORACLE-CONTRACT 'SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle)
 
 ;; Collateral parameters (basis points, 10000 = 100%)
 (define-constant COLLATERAL-RATIO-BPS     u15000)  ;; 150% minimum collateral ratio
 (define-constant LIQUIDATION-RATIO-BPS    u12500)  ;; 125% liquidation threshold
-(define-constant LIQUIDATION-BONUS-BPS    u  500)  ;; 5% bonus for liquidators
-(define-constant PROTOCOL-FEE-BPS         u   30)  ;; 0.30% origination fee to treasury
-(define-constant LP-INTEREST-RATE-BPS     u  200)  ;; 2.00% annualized base rate to LPs
+(define-constant LIQUIDATION-BONUS-BPS    u500)  ;; 5% bonus for liquidators
+(define-constant PROTOCOL-FEE-BPS         u30)   ;; 0.30% origination fee to treasury
+(define-constant LP-INTEREST-RATE-BPS     u200)  ;; 2.00% annualized base rate to LPs
 
 ;; Interest accrual uses block-time (Nakamoto: ~5 seconds per fast-block)
 ;; Annual seconds = 365 * 24 * 60 * 60 = 31536000
@@ -83,9 +75,10 @@
 ;; Maximum oracle staleness: 60 seconds
 (define-constant MAX-ORACLE-AGE-SECONDS  u60)
 
-;; Asset ticker symbols for oracle lookups
-(define-constant SBTC-TICKER  "sBTC-USD")
-(define-constant USDCX-TICKER "USDC-USD")
+;; Asset identifiers for oracle lookups.
+(define-constant SBTC-DIA-PAIR "sBTC/USD")
+;; USDCx is treated at $1.00 nominal value (8 decimals).
+(define-constant USDCX-PRICE-USD8 u100000000)
 
 ;; Token decimal scales
 (define-constant SBTC-DECIMALS   u8)   ;; sBTC has 8 decimals (satoshi-aligned)
@@ -124,7 +117,7 @@
 (define-constant ERR-MERCHANT-INVALID        (err u120))
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 4: VAULT STATE — DATA VARIABLES
+;; SECTION 4: VAULT STATE - DATA VARIABLES
 ;; ---------------------------------------------------------------------------
 
 ;; Circuit breaker: halts all mutations when true
@@ -152,8 +145,13 @@
 ;; Block-time (unix seconds) when interest index was last updated
 (define-data-var last-accrual-time uint u0)
 
+;; Cached sBTC/USD price and timestamp for read-only quote paths.
+;; Mutating paths refresh this cache from DIA before using the value.
+(define-data-var cached-sbtc-price uint u0)
+(define-data-var cached-sbtc-price-updated-at uint u0)
+
 ;; ---------------------------------------------------------------------------
-;; SECTION 5: VAULT STATE — DATA MAPS
+;; SECTION 5: VAULT STATE - DATA MAPS
 ;; ---------------------------------------------------------------------------
 
 ;; LP deposit record
@@ -191,8 +189,16 @@
   uint
 )
 
+;; Reverse index for the currently active borrower behind a loan-id.
+;; This lets close-out flows resolve write keys from contract state instead of
+;; trusting caller-supplied principals.
+(define-map active-loan-borrower
+  uint
+  principal
+)
+
 ;; ---------------------------------------------------------------------------
-;; SECTION 6: PRIVATE HELPERS — ARITHMETIC
+;; SECTION 6: PRIVATE HELPERS - ARITHMETIC
 ;; ---------------------------------------------------------------------------
 
 ;; Multiply two fixed-point values (both scaled by PRECISION), return at PRECISION scale
@@ -222,7 +228,7 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 7: PRIVATE HELPERS — INTEREST ACCRUAL
+;; SECTION 7: PRIVATE HELPERS - INTEREST ACCRUAL
 ;; ---------------------------------------------------------------------------
 
 ;; Compute the elapsed time since last accrual (capped to prevent runaway index).
@@ -230,7 +236,7 @@
 (define-private (elapsed-seconds)
   (let
     (
-      (now        (unwrap-panic (get-block-info? time u0)))  ;; Nakamoto: block-time
+      (now        stacks-block-time)  ;; Nakamoto: block-time
       (last-time  (var-get last-accrual-time))
     )
     ;; If vault is freshly deployed, seed last-accrual-time
@@ -270,7 +276,7 @@
     (
       (dt         (elapsed-seconds))
       (new-index  (compute-new-index dt))
-      (now        (unwrap-panic (get-block-info? time u0)))
+      (now        stacks-block-time)
     )
     (var-set global-interest-index new-index)
     (var-set last-accrual-time now)
@@ -288,30 +294,49 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 8: PRIVATE HELPERS — ORACLE & COLLATERAL
+;; SECTION 8: PRIVATE HELPERS - ORACLE & COLLATERAL
 ;; ---------------------------------------------------------------------------
 
-;; Fetch a validated price from the oracle adapter.
-;; Reverts if price is stale (> MAX-ORACLE-AGE-SECONDS) or zero.
-(define-private (get-validated-price (ticker (string-ascii 12)))
+;; Fetch a validated live sBTC/USD price from the DIA oracle.
+;; Public state-mutating flows can call this helper and persist the result locally.
+(define-private (fetch-live-sbtc-price)
   (let
     (
-      (result (contract-call? ORACLE-CONTRACT get-price ticker))
+      (price-data (unwrap-panic (contract-call? DIA-ORACLE-CONTRACT get-value SBTC-DIA-PAIR)))
     )
-    (match result
-      price-data
-        (let
-          (
-            (now         (unwrap-panic (get-block-info? time u0)))
-            (ts          (get timestamp price-data))
-            (px          (get price price-data))
-          )
-          (asserts! (<= (- now ts) MAX-ORACLE-AGE-SECONDS) ERR-ORACLE-STALE)
-          (asserts! (> px u0) ERR-PRICE-ZERO)
-          (ok price-data)
-        )
-      _err ERR-ORACLE-FAILURE
+    (let
+      (
+        (now         stacks-block-time)
+        (ts          (get timestamp price-data))
+        (px          (get value price-data))
+      )
+      (asserts! (<= (- now ts) MAX-ORACLE-AGE-SECONDS) ERR-ORACLE-STALE)
+      (asserts! (> px u0) ERR-PRICE-ZERO)
+      (ok { price: px, timestamp: ts })
     )
+  )
+)
+
+;; Persist a freshly validated oracle observation for read-only quote paths.
+(define-private (cache-sbtc-price (price uint) (timestamp uint))
+  (begin
+    (var-set cached-sbtc-price price)
+    (var-set cached-sbtc-price-updated-at timestamp)
+    true
+  )
+)
+
+;; Read-only quote paths use the cached price to stay Clarinet-compatible.
+(define-read-only (get-validated-cached-sbtc-price)
+  (let
+    (
+      (price (var-get cached-sbtc-price))
+      (ts    (var-get cached-sbtc-price-updated-at))
+      (now   stacks-block-time)
+    )
+    (asserts! (> price u0) ERR-PRICE-ZERO)
+    (asserts! (<= (- now ts) MAX-ORACLE-AGE-SECONDS) ERR-ORACLE-STALE)
+    (ok price)
   )
 )
 
@@ -370,7 +395,7 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 9: PRIVATE HELPERS — TOKEN OPS
+;; SECTION 9: PRIVATE HELPERS - TOKEN OPS
 ;; ---------------------------------------------------------------------------
 
 ;; Transfer USDCx from this contract to a recipient.
@@ -378,32 +403,32 @@
 (define-private (transfer-usdcx-out
     (amount uint)
     (recipient principal))
-  (contract-call? USDCX-CONTRACT transfer amount (as-contract tx-sender) recipient none)
+  (contract-call? USDCX-CONTRACT transfer amount current-contract recipient none)
 )
 
 ;; Transfer sBTC from a sender to this contract.
 (define-private (transfer-sbtc-in
     (amount uint)
     (sender principal))
-  (contract-call? SBTC-CONTRACT transfer amount sender (as-contract tx-sender) none)
+  (contract-call? SBTC-CONTRACT transfer amount sender current-contract none)
 )
 
 ;; Transfer sBTC from this contract back to a recipient.
 (define-private (transfer-sbtc-out
     (amount uint)
     (recipient principal))
-  (contract-call? SBTC-CONTRACT transfer amount (as-contract tx-sender) recipient none)
+  (contract-call? SBTC-CONTRACT transfer amount current-contract recipient none)
 )
 
 ;; Transfer USDCx from an LP into this contract.
 (define-private (transfer-usdcx-in
     (amount uint)
     (sender principal))
-  (contract-call? USDCX-CONTRACT transfer amount sender (as-contract tx-sender) none)
+  (contract-call? USDCX-CONTRACT transfer amount sender current-contract none)
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 10: ADMIN — GOVERNANCE & CIRCUIT BREAKER
+;; SECTION 10: ADMIN - GOVERNANCE & CIRCUIT BREAKER
 ;; ---------------------------------------------------------------------------
 
 ;; Pause all vault mutations. Emergency-only.
@@ -438,6 +463,25 @@
   )
 )
 
+;; Refresh the cached sBTC/USD oracle observation used by read-only quote paths.
+;; Anyone can call this to keep read-only simulate-borrow and health checks warm.
+(define-public (refresh-price-cache)
+  (let
+    (
+      (price-data (unwrap! (fetch-live-sbtc-price) ERR-ORACLE-FAILURE))
+      (price      (get price price-data))
+      (timestamp  (get timestamp price-data))
+    )
+    (cache-sbtc-price price timestamp)
+    (print {
+      event           : "refresh-price-cache",
+      sbtc-price-usd8 : price,
+      timestamp       : timestamp
+    })
+    (ok price-data)
+  )
+)
+
 ;; ---------------------------------------------------------------------------
 ;; SECTION 11: LIQUIDITY PROVIDER INTERFACE
 ;; ---------------------------------------------------------------------------
@@ -449,9 +493,9 @@
 (define-public (deposit-liquidity (amount-usdcx uint))
   (let
     (
-      (_accrued  (accrue-interest))
+      (accrued-interest (accrue-interest))
       (depositor tx-sender)
-      (now       (unwrap-panic (get-block-info? time u0)))
+      (now       stacks-block-time)
     )
     ;; Guards
     (asserts! (not (var-get vault-paused))           ERR-PAUSED)
@@ -489,7 +533,7 @@
 (define-public (withdraw-liquidity (amount-usdcx uint))
   (let
     (
-      (_accrued      (accrue-interest))
+      (accrued-interest (accrue-interest))
       (depositor     tx-sender)
       (deposit-entry (unwrap! (map-get? lp-deposits depositor) ERR-LP-NO-DEPOSIT))
       (dep-amount    (get deposited-usdcx deposit-entry))
@@ -530,14 +574,14 @@
       depositor      : depositor,
       withdrawn      : withdraw-amt,
       yield-earned   : (- accrued-total dep-amount),
-      timestamp      : (unwrap-panic (get-block-info? time u0))
+      timestamp      : stacks-block-time
     })
     (ok withdraw-amt)
   )
 )
 
 ;; ---------------------------------------------------------------------------
-;; SECTION 12: CORE — BORROW-AND-PAY (The JIT Atomic Loan)
+;; SECTION 12: CORE - BORROW-AND-PAY (The JIT Atomic Loan)
 ;; ---------------------------------------------------------------------------
 ;;
 ;; This is the canonical entry point for agent SDK calls.
@@ -570,58 +614,60 @@
     (collateral-sbtc  uint))
   (let
     (
-      ;; ── Step 1: Accrue interest ───────────────────────────────────────────
-      (_accrued          (accrue-interest))
+      ;; -- Step 1: Accrue interest -------------------------------------------
+      (accrued-interest  (accrue-interest))
       (borrower          tx-sender)
-      (now               (unwrap-panic (get-block-info? time u0)))
+      (now               stacks-block-time)
 
-      ;; ── Step 2a: Basic input validation ───────────────────────────────────
-      (_ (asserts! (not (var-get vault-paused))            ERR-PAUSED))
-      (_ (asserts! (>= amount-usdcx MIN-BORROW-AMOUNT)     ERR-BELOW-MIN-BORROW))
-      (_ (asserts! (<= amount-usdcx MAX-BORROW-AMOUNT)     ERR-ABOVE-MAX-BORROW))
-      (_ (asserts! (> collateral-sbtc u0)                  ERR-ZERO-COLLATERAL))
-      (_ (asserts! (not (is-eq merchant-address borrower)) ERR-MERCHANT-INVALID))
+      ;; -- Step 2a: Basic input validation -----------------------------------
+      (guard-paused      (asserts! (not (var-get vault-paused))            ERR-PAUSED))
+      (guard-min-borrow  (asserts! (>= amount-usdcx MIN-BORROW-AMOUNT)     ERR-BELOW-MIN-BORROW))
+      (guard-max-borrow  (asserts! (<= amount-usdcx MAX-BORROW-AMOUNT)     ERR-ABOVE-MAX-BORROW))
+      (guard-collateral  (asserts! (> collateral-sbtc u0)                  ERR-ZERO-COLLATERAL))
+      (guard-single-loan (asserts! (is-none (map-get? borrower-active-loan borrower)) ERR-POSITION-EXISTS))
+      (guard-merchant    (asserts! (not (is-eq merchant-address borrower)) ERR-MERCHANT-INVALID))
 
-      ;; ── Step 3: Oracle price fetch & validation ────────────────────────────
-      (sbtc-price-data   (unwrap! (get-validated-price SBTC-TICKER)  ERR-ORACLE-FAILURE))
-      (usdcx-price-data  (unwrap! (get-validated-price USDCX-TICKER) ERR-ORACLE-FAILURE))
+      ;; -- Step 3: Oracle price fetch & validation ----------------------------
+      (sbtc-price-data   (unwrap! (fetch-live-sbtc-price) ERR-ORACLE-FAILURE))
       (sbtc-price        (get price sbtc-price-data))
-      (usdcx-price       (get price usdcx-price-data))
+      (sbtc-price-ts     (get timestamp sbtc-price-data))
+      (usdcx-price       USDCX-PRICE-USD8)
 
-      ;; ── Step 4: Collateral ratio check ────────────────────────────────────
+      ;; -- Step 4: Collateral ratio check ------------------------------------
       (min-sbtc-required (min-collateral-for-borrow amount-usdcx sbtc-price usdcx-price))
-      (_ (asserts! (>= collateral-sbtc min-sbtc-required) ERR-INSUFFICIENT-COLLATERAL))
+      (guard-ratio       (asserts! (>= collateral-sbtc min-sbtc-required) ERR-INSUFFICIENT-COLLATERAL))
 
-      ;; ── Step 5: Liquidity availability check ──────────────────────────────
+      ;; -- Step 5: Liquidity availability check ------------------------------
       (free-liquidity    (- (var-get total-lp-deposits) (var-get total-borrowed)))
-      (_ (asserts! (>= free-liquidity amount-usdcx)     ERR-INSUFFICIENT-LIQUIDITY))
+      (guard-liquidity   (asserts! (>= free-liquidity amount-usdcx)     ERR-INSUFFICIENT-LIQUIDITY))
 
-      ;; ── Step 6: Origination fee computation ───────────────────────────────
+      ;; -- Step 6: Origination fee computation -------------------------------
       (protocol-fee      (bps-of amount-usdcx PROTOCOL-FEE-BPS))
       (net-payment       (- amount-usdcx protocol-fee))
 
-      ;; ── Step 10a: Generate unique loan ID ──────────────────────────────────
+      ;; -- Step 10a: Generate unique loan ID ----------------------------------
       (new-nonce         (+ (var-get loan-nonce) u1))
     )
 
-    ;; ── Step 7: LOCK — Transfer sBTC collateral from agent to vault ──────────
+    ;; -- Step 7: LOCK - Transfer sBTC collateral from agent to vault ----------
+    (cache-sbtc-price sbtc-price sbtc-price-ts)
     (unwrap!
       (transfer-sbtc-in collateral-sbtc borrower)
       ERR-TRANSFER-FAILED)
 
-    ;; ── Step 9: PAY — Transfer net USDCx from vault to merchant ──────────────
+    ;; -- Step 9: PAY - Transfer net USDCx from vault to merchant --------------
     ;; Done before recording state (fail-fast: if transfer fails, entire tx reverts)
     (unwrap!
       (transfer-usdcx-out net-payment merchant-address)
       ERR-TRANSFER-FAILED)
 
-    ;; ── Step 8: Update global borrow accounting ───────────────────────────────
+    ;; -- Step 8: Update global borrow accounting -------------------------------
     (var-set total-borrowed         (+ (var-get total-borrowed) amount-usdcx))
     (var-set total-collateral-locked (+ (var-get total-collateral-locked) collateral-sbtc))
     (var-set protocol-fee-reserve   (+ (var-get protocol-fee-reserve) protocol-fee))
     (var-set loan-nonce             new-nonce)
 
-    ;; ── Step 10b: Record position ──────────────────────────────────────────────
+    ;; -- Step 10b: Record position ----------------------------------------------
     (map-set borrow-positions
       { borrower: borrower, loan-id: new-nonce }
       {
@@ -634,8 +680,9 @@
       }
     )
     (map-set borrower-active-loan borrower new-nonce)
+    (map-set active-loan-borrower new-nonce borrower)
 
-    ;; ── Step 11: Structured event emission ────────────────────────────────────
+    ;; -- Step 11: Structured event emission ------------------------------------
     (print {
       event              : "borrow-and-pay",
       loan-id            : new-nonce,
@@ -674,13 +721,15 @@
 (define-public (repay-loan (loan-id uint) (repay-usdcx uint))
   (let
     (
-      (_accrued    (accrue-interest))
-      (borrower    tx-sender)
-      (position    (unwrap! (map-get? borrow-positions { borrower: borrower, loan-id: loan-id })
-                            ERR-POSITION-NOT-FOUND))
-      (_ (asserts! (get is-active position)       ERR-POSITION-NOT-FOUND))
-      (_ (asserts! (not (var-get vault-paused))   ERR-PAUSED))
-      (_ (asserts! (> repay-usdcx u0)             ERR-INVALID-AMOUNT))
+      (accrued-interest (accrue-interest))
+      (borrower       tx-sender)
+      (active-loan-id (unwrap! (map-get? borrower-active-loan borrower) ERR-POSITION-NOT-FOUND))
+      (guard-loan-id  (asserts! (is-eq loan-id active-loan-id) ERR-POSITION-NOT-FOUND))
+      (position       (unwrap! (map-get? borrow-positions { borrower: borrower, loan-id: active-loan-id })
+                               ERR-POSITION-NOT-FOUND))
+      (guard-active (asserts! (get is-active position)       ERR-POSITION-NOT-FOUND))
+      (guard-paused (asserts! (not (var-get vault-paused))   ERR-PAUSED))
+      (guard-amount (asserts! (> repay-usdcx u0)             ERR-INVALID-AMOUNT))
 
       (principal    (get principal-usdcx position))
       (b-index      (get borrow-index    position))
@@ -688,10 +737,10 @@
 
       ;; Outstanding debt including accrued interest
       (total-debt   (compute-debt principal b-index))
-      (_ (asserts! (<= repay-usdcx total-debt) ERR-REPAY-EXCEEDS-DEBT))
+      (guard-debt   (asserts! (<= repay-usdcx total-debt) ERR-REPAY-EXCEEDS-DEBT))
 
       (is-full-repay (is-eq repay-usdcx total-debt))
-      (now           (unwrap-panic (get-block-info? time u0)))
+      (now           stacks-block-time)
     )
 
     ;; Pull USDCx repayment from borrower
@@ -701,15 +750,16 @@
       (begin
         ;; Full repayment: release all collateral, close position
         (unwrap! (transfer-sbtc-out collateral borrower) ERR-TRANSFER-FAILED)
-        (map-set borrow-positions { borrower: borrower, loan-id: loan-id }
+        (map-set borrow-positions { borrower: borrower, loan-id: active-loan-id }
           (merge position { is-active: false })
         )
         (map-delete borrower-active-loan borrower)
+        (map-delete active-loan-borrower active-loan-id)
         (var-set total-borrowed          (- (var-get total-borrowed) principal))
         (var-set total-collateral-locked (- (var-get total-collateral-locked) collateral))
       )
       ;; Partial repayment: reduce principal, keep position open
-      (map-set borrow-positions { borrower: borrower, loan-id: loan-id }
+      (map-set borrow-positions { borrower: borrower, loan-id: active-loan-id }
         (merge position {
           principal-usdcx : (- total-debt repay-usdcx),
           borrow-index    : (var-get global-interest-index)
@@ -745,12 +795,16 @@
 (define-public (liquidate (borrower principal) (loan-id uint))
   (let
     (
-      (_accrued       (accrue-interest))
-      (liquidator     tx-sender)
-      (position       (unwrap! (map-get? borrow-positions { borrower: borrower, loan-id: loan-id })
-                               ERR-POSITION-NOT-FOUND))
-      (_ (asserts! (get is-active position)       ERR-POSITION-NOT-FOUND))
-      (_ (asserts! (not (var-get vault-paused))   ERR-PAUSED))
+      (accrued-interest (accrue-interest))
+      (liquidator       tx-sender)
+      (stored-borrower  (unwrap! (map-get? active-loan-borrower loan-id) ERR-POSITION-NOT-FOUND))
+      (guard-borrower   (asserts! (is-eq borrower stored-borrower) ERR-POSITION-NOT-FOUND))
+      (active-loan-id   (unwrap! (map-get? borrower-active-loan stored-borrower) ERR-POSITION-NOT-FOUND))
+      (guard-loan-id    (asserts! (is-eq loan-id active-loan-id) ERR-POSITION-NOT-FOUND))
+      (position         (unwrap! (map-get? borrow-positions { borrower: stored-borrower, loan-id: active-loan-id })
+                                 ERR-POSITION-NOT-FOUND))
+      (guard-active     (asserts! (get is-active position)       ERR-POSITION-NOT-FOUND))
+      (guard-paused     (asserts! (not (var-get vault-paused))   ERR-PAUSED))
 
       (principal      (get principal-usdcx position))
       (b-index        (get borrow-index    position))
@@ -758,16 +812,16 @@
       (total-debt     (compute-debt principal b-index))
 
       ;; Oracle prices for health check
-      (sbtc-price-data  (unwrap! (get-validated-price SBTC-TICKER)  ERR-ORACLE-FAILURE))
-      (usdcx-price-data (unwrap! (get-validated-price USDCX-TICKER) ERR-ORACLE-FAILURE))
+      (sbtc-price-data  (unwrap! (fetch-live-sbtc-price) ERR-ORACLE-FAILURE))
       (sbtc-price       (get price sbtc-price-data))
-      (usdcx-price      (get price usdcx-price-data))
+      (sbtc-price-ts    (get timestamp sbtc-price-data))
+      (usdcx-price      USDCX-PRICE-USD8)
 
       ;; Position MUST be below liquidation threshold to be eligible
-      (_ (asserts!
-            (not (is-position-healthy
-                    collateral total-debt sbtc-price usdcx-price LIQUIDATION-RATIO-BPS))
-            ERR-POSITION-HEALTHY))
+      (guard-health (asserts!
+                      (not (is-position-healthy
+                              collateral total-debt sbtc-price usdcx-price LIQUIDATION-RATIO-BPS))
+                      ERR-POSITION-HEALTHY))
 
       ;; Liquidator receives: collateral * (1 + bonus_bps / 10000)
       ;; Capped at full collateral to prevent over-payment
@@ -775,27 +829,29 @@
       (sbtc-to-liquidator (if (> (+ collateral bonus-sbtc) collateral)
                             collateral  ;; cap at full collateral
                             (+ collateral bonus-sbtc)))
-      (now            (unwrap-panic (get-block-info? time u0)))
+      (now            stacks-block-time)
     )
 
     ;; Liquidator repays full outstanding debt
+    (cache-sbtc-price sbtc-price sbtc-price-ts)
     (unwrap! (transfer-usdcx-in total-debt liquidator) ERR-TRANSFER-FAILED)
 
     ;; Liquidator receives collateral + bonus
     (unwrap! (transfer-sbtc-out sbtc-to-liquidator liquidator) ERR-TRANSFER-FAILED)
 
     ;; Close position
-    (map-set borrow-positions { borrower: borrower, loan-id: loan-id }
+    (map-set borrow-positions { borrower: stored-borrower, loan-id: active-loan-id }
       (merge position { is-active: false })
     )
-    (map-delete borrower-active-loan borrower)
+    (map-delete borrower-active-loan stored-borrower)
+    (map-delete active-loan-borrower active-loan-id)
     (var-set total-borrowed          (- (var-get total-borrowed) principal))
     (var-set total-collateral-locked (- (var-get total-collateral-locked) collateral))
 
     (print {
       event             : "liquidation",
-      loan-id           : loan-id,
-      borrower          : borrower,
+      loan-id           : active-loan-id,
+      borrower          : stored-borrower,
       liquidator        : liquidator,
       debt-repaid       : total-debt,
       sbtc-released     : sbtc-to-liquidator,
@@ -818,6 +874,8 @@
     protocol-fee-reserve   : (var-get protocol-fee-reserve),
     global-interest-index  : (var-get global-interest-index),
     last-accrual-time      : (var-get last-accrual-time),
+    cached-sbtc-price      : (var-get cached-sbtc-price),
+    cached-sbtc-updated-at : (var-get cached-sbtc-price-updated-at),
     loan-nonce             : (var-get loan-nonce),
     is-paused              : (var-get vault-paused),
     free-liquidity         : (- (var-get total-lp-deposits) (var-get total-borrowed))
@@ -865,27 +923,23 @@
 (define-read-only (get-health-factor (borrower principal) (loan-id uint))
   (match (map-get? borrow-positions { borrower: borrower, loan-id: loan-id })
     pos
-      (match (get-validated-price SBTC-TICKER)
-        sbtc-data
-          (match (get-validated-price USDCX-TICKER)
-            usdcx-data
-              (let
-                (
-                  (debt          (compute-debt (get principal-usdcx pos) (get borrow-index pos)))
-                  (col-val       (sbtc-to-usdcx-value
-                                    (get collateral-sbtc pos)
-                                    (get price sbtc-data)
-                                    (get price usdcx-data)))
-                  (liquidation-threshold (bps-of debt LIQUIDATION-RATIO-BPS))
-                )
-                (if (is-eq liquidation-threshold u0)
-                  (ok PRECISION)
-                  (ok (fp-div col-val liquidation-threshold))
-                )
-              )
-            _ ERR-ORACLE-FAILURE
+      (match (get-validated-cached-sbtc-price)
+        sbtc-price
+          (let
+            (
+              (debt          (compute-debt (get principal-usdcx pos) (get borrow-index pos)))
+              (col-val       (sbtc-to-usdcx-value
+                                (get collateral-sbtc pos)
+                                sbtc-price
+                                USDCX-PRICE-USD8))
+              (liquidation-threshold (bps-of debt LIQUIDATION-RATIO-BPS))
+            )
+            (if (is-eq liquidation-threshold u0)
+              (ok PRECISION)
+              (ok (fp-div col-val liquidation-threshold))
+            )
           )
-        _ ERR-ORACLE-FAILURE
+        oracle-error ERR-ORACLE-FAILURE
       )
     ERR-POSITION-NOT-FOUND
   )
@@ -894,29 +948,24 @@
 ;; Simulate a borrow-and-pay to return required collateral & fees before execution.
 (define-read-only (simulate-borrow
     (amount-usdcx uint))
-  (match (get-validated-price SBTC-TICKER)
-    sbtc-data
-      (match (get-validated-price USDCX-TICKER)
-        usdcx-data
-          (let
-            (
-              (sbtc-price  (get price sbtc-data))
-              (usdcx-price (get price usdcx-data))
-              (min-sbtc    (min-collateral-for-borrow amount-usdcx sbtc-price usdcx-price))
-              (fee         (bps-of amount-usdcx PROTOCOL-FEE-BPS))
-              (net-pay     (- amount-usdcx fee))
-            )
-            (ok {
-              required-collateral-sbtc : min-sbtc,
-              origination-fee-usdcx    : fee,
-              net-payment-usdcx        : net-pay,
-              sbtc-price-usd8          : sbtc-price,
-              usdcx-price-usd8         : usdcx-price,
-              collateral-ratio-bps     : COLLATERAL-RATIO-BPS
-            })
-          )
-        _ ERR-ORACLE-FAILURE
+  (match (get-validated-cached-sbtc-price)
+    sbtc-price
+      (let
+        (
+          (usdcx-price USDCX-PRICE-USD8)
+          (min-sbtc    (min-collateral-for-borrow amount-usdcx sbtc-price usdcx-price))
+          (fee         (bps-of amount-usdcx PROTOCOL-FEE-BPS))
+          (net-pay     (- amount-usdcx fee))
+        )
+        (ok {
+          required-collateral-sbtc : min-sbtc,
+          origination-fee-usdcx    : fee,
+          net-payment-usdcx        : net-pay,
+          sbtc-price-usd8          : sbtc-price,
+          usdcx-price-usd8         : usdcx-price,
+          collateral-ratio-bps     : COLLATERAL-RATIO-BPS
+        })
       )
-    _ ERR-ORACLE-FAILURE
+    oracle-error ERR-ORACLE-FAILURE
   )
 )
