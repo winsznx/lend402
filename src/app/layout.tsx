@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   description:
     "Lend402 turns paid agent calls into Stacks-native x402 transactions. Agents use sBTC collateral to borrow just enough USDCx to settle a request on-chain before the provider response is released.",
   keywords: ["Stacks", "Bitcoin", "sBTC", "USDCx", "AI agents", "x402", "Nakamoto", "Clarity"],
+  icons: {
+    icon: "/favicon.svg",
+  },
+  manifest: "/manifest.json",
   other: {
     "talentapp:project_verification":
       "31b678dcae1e731a93b37f2f09fbe57e89f05853459e05dd0a46e88af64b1208f69fd791ee06c14fd48e6b2190e4797d28326a2020d3d8ce788394fdd5c1cfbb",
