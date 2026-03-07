@@ -1,8 +1,11 @@
+# Local-only Clarinet settings.
+# This file is gitignored on purpose. Never commit real mnemonics.
+
 [network]
 name = "devnet"
 deployment_fee_rate = 10
 
 [accounts.deployer]
-mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 balance = 100_000_000_000_000
 sbtc_balance = 1_000_000_000
