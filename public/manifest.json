@@ -1,0 +1,16 @@
+{
+  "name": "Lend402",
+  "short_name": "Lend402",
+  "description": "Stacks-native x402 credit rail for agentic APIs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050810",
+  "theme_color": "#050810",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
