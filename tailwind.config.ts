@@ -11,7 +11,17 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ["var(--font-mono)", "JetBrains Mono", "Fira Code", "Cascadia Code", "monospace"],
+        mono:    ["var(--font-mono)", "JetBrains Mono", "Fira Code", "Cascadia Code", "monospace"],
+        display: ["var(--font-display)", "Syne", "sans-serif"],
+      },
+      colors: {
+        brand: {
+          amber:  "#f59e0b",
+          cyan:   "#22d3ee",
+          violet: "#a78bfa",
+          emerald:"#4ade80",
+          red:    "#f87171",
+        },
       },
       animation: {
         "terminal-in": "terminalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both",
