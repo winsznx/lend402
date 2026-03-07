@@ -2,30 +2,34 @@
   "name": "lend402-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "Agent Command Center — JIT micro-lending for AI agents on Stacks Nakamoto",
+  "license": "MIT",
+  "description": "Stacks-native x402 payment and credit rail for agentic APIs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "merchant": "ts-node --project tsconfig.server.json server/merchant-api.ts",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clarinet:check": "clarinet check -m Clarinet.toml",
+    "clarinet:format": "clarinet format contracts/lend402-vault.clar",
+    "clarinet:console:mainnet": "clarinet console -m Clarinet.toml --enable-remote-data"
   },
   "dependencies": {
     "@stacks/connect": "^7.10.1",
+    "@stacks/encryption": "^6.17.0",
     "@stacks/network": "^6.13.0",
     "@stacks/transactions": "^6.16.0",
     "axios": "^1.7.7",
-    "express": "^4.21.0",
-    "express-rate-limit": "^7.4.0",
-    "helmet": "^8.0.0",
+    "ioredis": "^5.10.0",
     "next": "^16.1.6",
+    "postgres": "^3.4.8",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "uuid": "^10.0.0",
+    "x402-stacks": "^2.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
-    "@types/express": "^5.0.0",
     "@types/node": "^20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -34,7 +38,6 @@
     "eslint-config-next": "^16.1.6",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
-    "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }
 }
