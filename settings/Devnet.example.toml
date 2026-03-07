@@ -1,0 +1,11 @@
+# Copy to settings/Devnet.toml for local use.
+# Never commit real mnemonics or deployment settings back to git.
+
+[network]
+name = "devnet"
+deployment_fee_rate = 10
+
+[accounts.deployer]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+balance = 100_000_000_000_000
+sbtc_balance = 1_000_000_000
