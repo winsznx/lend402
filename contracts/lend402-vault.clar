@@ -584,30 +584,62 @@
 ;; SECTION 12: CORE - BORROW-AND-PAY (The JIT Atomic Loan)
 ;; ---------------------------------------------------------------------------
 ;;
-;; This is the canonical entry point for agent SDK calls.
+;; This is the canonical entry point called by the Lend402 agent SDK.
+;;
+;; CALLER: The Lend402 gateway, acting on behalf of the AI agent, submits
+;; this transaction after receiving a signed payload in the x402
+;; `payment-signature` header. The gateway validates the signed transaction
+;; (contract address, function name, arguments, amounts) before broadcast.
+;;
+;; ATOMICITY GUARANTEE:
+;; Clarity's execution model guarantees that if ANY step fails — oracle stale,
+;; collateral insufficient, transfer rejected — the ENTIRE transaction reverts.
+;; No partial state is possible. Either the agent pays the merchant and the
+;; sBTC is locked, or nothing happens.
+;;
+;; EXTERNAL POST-CONDITION ENFORCEMENT (SDK layer):
+;; The agent SDK signs the Stacks transaction with PostConditionMode.Deny and
+;; two explicit post-conditions (enforced by the Stacks protocol before the
+;; contract even executes):
+;;   1. makeStandardFungiblePostCondition(agent, Equal, collateral-sbtc, sBTC)
+;;      → Agent's wallet MUST send exactly collateral-sbtc satoshis of sBTC.
+;;        If the contract attempts to move more or less, the tx is aborted.
+;;   2. makeContractFungiblePostCondition(vault, Equal, net-payment, USDCx)
+;;      → The vault contract MUST send exactly net-payment micro-USDCx to merchant.
+;;        Prevents the contract from routing funds elsewhere or retaining more.
+;; These post-conditions are the agent's cryptographic guarantee before signing.
+;;
+;; INTERNAL INVARIANT ENFORCEMENT (contract layer, below):
+;; The contract independently verifies every invariant before touching balances:
+;;   - Oracle price is live (fetched from DIA on-chain, staleness ≤ 60 s)
+;;   - Collateral ratio ≥ 150% at the current oracle price
+;;   - LP pool has enough free liquidity to service the borrow
+;;   - Borrower has no existing open position (one active loan per agent)
+;;   - Merchant is not the borrower (prevents self-dealing)
 ;;
 ;; FLOW:
-;;   1. Accrue global interest index
-;;   2. Validate inputs and circuit breaker
-;;   3. Fetch + validate oracle prices (staleness check)
-;;   4. Verify submitted collateral-sbtc satisfies 150% ratio for amount-usdcx
-;;   5. Verify sufficient LP liquidity
-;;   6. Compute and deduct origination fee
-;;   7. LOCK: Transfer collateral-sbtc from agent into vault
-;;   8. BORROW: Increase total-borrowed state
-;;   9. PAY: Transfer net USDCx directly to merchant-address
-;;  10. Record borrow position with index snapshot + block-time timestamp
-;;  11. Emit structured event log
+;;   1. Accrue global interest index (updates LP yield state)
+;;   2. Validate inputs and circuit breaker (paused, bounds, single-loan)
+;;   3. Fetch + validate DIA oracle price (staleness ≤ MAX-ORACLE-AGE-SECONDS)
+;;   4. Collateral ratio check: collateral-sbtc ≥ min_required at live price
+;;   5. Liquidity check: free LP capital ≥ amount-usdcx
+;;   6. Compute origination fee (0.30% of borrow amount → protocol treasury)
+;;   7. LOCK: Transfer collateral-sbtc from agent into vault (sBTC in)
+;;   8. PAY:  Transfer net USDCx from vault to merchant-address (USDCx out)
+;;   9. Update accounting: total-borrowed, total-collateral-locked, fee reserve
+;;  10. Record borrow position with interest-index snapshot for debt accrual
+;;  11. Emit structured print event for off-chain indexers
 ;;
-;; POST-CONDITIONS (enforced by Clarity's linear type system + explicit asserts):
-;;   - Agent's sBTC balance DECREASES by exactly collateral-sbtc
-;;   - Merchant's USDCx balance INCREASES by exactly (amount-usdcx - fee)
-;;   - Vault's sBTC balance INCREASES by exactly collateral-sbtc
-;;   - total-borrowed INCREASES by exactly amount-usdcx
+;; UNDERCOLLATERALISATION HANDLING:
+;; If collateral-sbtc < min-sbtc-required at the live oracle price, the
+;; function fails with ERR-INSUFFICIENT-COLLATERAL (u103) and reverts.
+;; The agent SDK pre-computes min-sbtc-required via the read-only
+;; simulate-borrow function before signing, so this guard only fires if the
+;; oracle price moved adversely between simulation and broadcast.
 ;;
-;; @param amount-usdcx      USDCx to borrow and pay (6 decimals)
+;; @param amount-usdcx      USDCx to borrow and pay (6 decimals; 1_000_000 = $1.00)
 ;; @param merchant-address  The API provider's Stacks principal receiving USDCx
-;; @param collateral-sbtc   sBTC to lock as collateral (8 decimals, satoshis)
+;; @param collateral-sbtc   sBTC to lock as collateral (8 decimals; satoshis)
 (define-public (borrow-and-pay
     (amount-usdcx    uint)
     (merchant-address principal)
@@ -615,59 +647,109 @@
   (let
     (
       ;; -- Step 1: Accrue interest -------------------------------------------
+      ;; Must run first so the global-interest-index reflects the current block
+      ;; before any position is opened or checked against it.
       (accrued-interest  (accrue-interest))
       (borrower          tx-sender)
       (now               stacks-block-time)
 
-      ;; -- Step 2a: Basic input validation -----------------------------------
+      ;; -- Step 2: Input validation & circuit breaker ------------------------
+      ;; ERR-PAUSED (101): owner has halted the vault (emergency stop).
       (guard-paused      (asserts! (not (var-get vault-paused))            ERR-PAUSED))
+      ;; ERR-BELOW-MIN-BORROW (112): dust guard — minimum 1.00 USDCx.
       (guard-min-borrow  (asserts! (>= amount-usdcx MIN-BORROW-AMOUNT)     ERR-BELOW-MIN-BORROW))
+      ;; ERR-ABOVE-MAX-BORROW (113): single-call circuit breaker — max 10 000 USDCx.
       (guard-max-borrow  (asserts! (<= amount-usdcx MAX-BORROW-AMOUNT)     ERR-ABOVE-MAX-BORROW))
+      ;; ERR-ZERO-COLLATERAL (115): collateral must be positive.
       (guard-collateral  (asserts! (> collateral-sbtc u0)                  ERR-ZERO-COLLATERAL))
+      ;; ERR-POSITION-EXISTS (109): one active loan per agent at a time.
+      ;; This prevents a single agent from draining the pool across concurrent calls.
       (guard-single-loan (asserts! (is-none (map-get? borrower-active-loan borrower)) ERR-POSITION-EXISTS))
+      ;; ERR-MERCHANT-INVALID (120): agent cannot pay themselves.
       (guard-merchant    (asserts! (not (is-eq merchant-address borrower)) ERR-MERCHANT-INVALID))
 
-      ;; -- Step 3: Oracle price fetch & validation ----------------------------
+      ;; -- Step 3: Oracle price fetch & staleness validation -----------------
+      ;; fetch-live-sbtc-price calls DIA on-chain and asserts:
+      ;;   (a) price > 0
+      ;;   (b) now - timestamp ≤ MAX-ORACLE-AGE-SECONDS (60 s)
+      ;; If either assertion fails → ERR-ORACLE-STALE (105) or ERR-PRICE-ZERO (119).
+      ;; This is a live on-chain read — the cached price is NOT used here.
       (sbtc-price-data   (unwrap! (fetch-live-sbtc-price) ERR-ORACLE-FAILURE))
-      (sbtc-price        (get price sbtc-price-data))
+      (sbtc-price        (get price sbtc-price-data))       ;; sBTC/USD, 8 decimals
       (sbtc-price-ts     (get timestamp sbtc-price-data))
+      ;; USDCx is pegged at $1.00 (100_000_000 in 8-decimal representation).
       (usdcx-price       USDCX-PRICE-USD8)
 
       ;; -- Step 4: Collateral ratio check ------------------------------------
+      ;; min_sbtc = borrow_usdcx * (COLLATERAL_RATIO / 10000)
+      ;;              * (usdcx_price / sbtc_price) * 100
+      ;; The *100 term normalises the 8-decimal sBTC to 6-decimal USDCx.
+      ;; At $100k sBTC and $0.50 USDCx price: borrowing $0.50 requires
+      ;; 0.50 * 1.50 / 100000 * 100 = 750 satoshis minimum collateral.
+      ;;
+      ;; ERR-INSUFFICIENT-COLLATERAL (103): the submitted collateral-sbtc
+      ;; does not cover 150% of amount-usdcx at the current oracle price.
+      ;; The agent SDK pre-simulates this via simulate-borrow (read-only),
+      ;; so this guard only triggers if the oracle price fell between
+      ;; simulation time and broadcast confirmation.
       (min-sbtc-required (min-collateral-for-borrow amount-usdcx sbtc-price usdcx-price))
       (guard-ratio       (asserts! (>= collateral-sbtc min-sbtc-required) ERR-INSUFFICIENT-COLLATERAL))
 
-      ;; -- Step 5: Liquidity availability check ------------------------------
+      ;; -- Step 5: LP liquidity availability check ---------------------------
+      ;; free-liquidity = total LP deposits - total currently borrowed out.
+      ;; ERR-INSUFFICIENT-LIQUIDITY (104): the pool cannot fund this borrow.
       (free-liquidity    (- (var-get total-lp-deposits) (var-get total-borrowed)))
       (guard-liquidity   (asserts! (>= free-liquidity amount-usdcx)     ERR-INSUFFICIENT-LIQUIDITY))
 
-      ;; -- Step 6: Origination fee computation -------------------------------
+      ;; -- Step 6: Fee computation -------------------------------------------
+      ;; protocol-fee = amount * PROTOCOL_FEE_BPS / 10000  (= 0.30%)
+      ;; net-payment  = amount - protocol-fee
+      ;; The merchant receives net-payment; the fee accrues in protocol-fee-reserve
+      ;; pending collection by the owner via collect-protocol-fees.
       (protocol-fee      (bps-of amount-usdcx PROTOCOL-FEE-BPS))
       (net-payment       (- amount-usdcx protocol-fee))
 
-      ;; -- Step 10a: Generate unique loan ID ----------------------------------
+      ;; -- Loan ID -----------------------------------------------------------
+      ;; Monotonically incrementing nonce gives each position a unique key.
+      ;; Also serves as an implicit anti-replay index for position lookups.
       (new-nonce         (+ (var-get loan-nonce) u1))
     )
 
-    ;; -- Step 7: LOCK - Transfer sBTC collateral from agent to vault ----------
+    ;; -- Step 7: LOCK - Transfer sBTC collateral from agent into vault --------
+    ;; persist oracle observation so read-only quote paths stay warm
     (cache-sbtc-price sbtc-price sbtc-price-ts)
+    ;; The SIP-010 transfer call moves exactly collateral-sbtc satoshis from
+    ;; tx-sender (the agent) to current-contract (this vault). The Stacks
+    ;; protocol enforces this matches the SDK-level post-condition before
+    ;; the contract is invoked. If the sBTC transfer fails for any reason
+    ;; (insufficient balance, SIP-010 rejection), the whole tx reverts.
     (unwrap!
       (transfer-sbtc-in collateral-sbtc borrower)
       ERR-TRANSFER-FAILED)
 
-    ;; -- Step 9: PAY - Transfer net USDCx from vault to merchant --------------
-    ;; Done before recording state (fail-fast: if transfer fails, entire tx reverts)
+    ;; -- Step 8: PAY - Transfer net USDCx from vault to merchant --------------
+    ;; The vault sends net-payment micro-USDCx directly to merchant-address.
+    ;; This is the API payment that unlocks the origin response. If this
+    ;; transfer fails (vault has insufficient USDCx despite the liquidity
+    ;; check — e.g., concurrent race), the sBTC transfer above also reverts
+    ;; because Clarity rolls back all state on any (err ...) unwrap failure.
+    ;; The SDK post-condition asserts this exact amount reaches the merchant.
     (unwrap!
       (transfer-usdcx-out net-payment merchant-address)
       ERR-TRANSFER-FAILED)
 
-    ;; -- Step 8: Update global borrow accounting -------------------------------
+    ;; -- Step 9: Update global accounting -------------------------------------
+    ;; Only reached if BOTH transfers succeeded. Global counters are updated
+    ;; after transfers so any revert leaves them consistent.
     (var-set total-borrowed         (+ (var-get total-borrowed) amount-usdcx))
     (var-set total-collateral-locked (+ (var-get total-collateral-locked) collateral-sbtc))
     (var-set protocol-fee-reserve   (+ (var-get protocol-fee-reserve) protocol-fee))
     (var-set loan-nonce             new-nonce)
 
-    ;; -- Step 10b: Record position ----------------------------------------------
+    ;; -- Step 10: Record borrow position --------------------------------------
+    ;; borrow-index snapshot ties this position to the current interest index.
+    ;; compute-debt uses this snapshot for proportional interest accrual:
+    ;;   outstanding_debt = principal * (current_index / borrow_index)
     (map-set borrow-positions
       { borrower: borrower, loan-id: new-nonce }
       {
@@ -679,10 +761,13 @@
         is-active        : true
       }
     )
+    ;; O(1) active-loan lookups by borrower and by loan-id (for liquidation).
     (map-set borrower-active-loan borrower new-nonce)
     (map-set active-loan-borrower new-nonce borrower)
 
-    ;; -- Step 11: Structured event emission ------------------------------------
+    ;; -- Step 11: Structured event emission -----------------------------------
+    ;; Indexed by off-chain listeners (Hiro Explorer, Lend402 dashboard).
+    ;; min-sbtc-required is emitted so observers can verify the ratio held.
     (print {
       event              : "borrow-and-pay",
       loan-id            : new-nonce,
