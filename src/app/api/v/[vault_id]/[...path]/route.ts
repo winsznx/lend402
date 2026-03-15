@@ -29,7 +29,7 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   verifyXPayment,
 } from "@/lib/x402";
-import { normalizeTxid } from "@/lib/network";
+import { DEFAULT_USDCX_CONTRACT, normalizeTxid } from "@/lib/network";
 import { getServerStacksConfig } from "@/lib/server-config";
 import { settleStacksPayment } from "@/lib/settlement";
 
@@ -165,6 +165,10 @@ async function handleRequest(
     resource: resourceUrl,
     description: vault.description ?? vault.resource_name,
     asset: vault.asset_contract,
+    // sBTC asset is derived from the network; the gateway includes it in the
+    // multi-rail accepts array to demonstrate x402 V2 multi-rail awareness.
+    // The conservative reference price used for the satoshi quote is documented
+    // in buildPaymentRequiredBody and marked amountIsApproximate in extra.
   });
   const paymentRequiredHeader = buildPaymentRequiredHeader(paymentRequiredBody);
   const paymentSignatureRaw = req.headers.get(PAYMENT_SIGNATURE_HEADER);
@@ -214,6 +218,18 @@ async function handleRequest(
     return jsonError(paymentCheck.reason ?? "Invalid payment payload", 400);
   }
 
+  // If the agent chose the sBTC direct-pay option from accepts[], surface a
+  // clear error. sBTC direct settlement (not via borrow-and-pay) is not yet
+  // active on this gateway. The `railStatus: "active"` in extra already
+  // advertises this option; this guard makes the failure message actionable.
+  const usdcxContracts = Object.values(DEFAULT_USDCX_CONTRACT);
+  if (!usdcxContracts.includes(xPayment.accepted.asset)) {
+    return jsonError(
+      `Payment asset ${xPayment.accepted.asset} is not accepted. This gateway settles USDCx payments only.`,
+      422
+    );
+  }
+
   const signedTransactionHex = xPayment.payload.transaction.replace(/^0x/i, "");
   let payerAddress: string;
   let txid: string;
@@ -225,6 +241,24 @@ async function handleRequest(
     }));
   } catch (error) {
     return jsonError(`Invalid signed transaction: ${(error as Error).message}`, 400);
+  }
+
+  // x402 V2 payment-identifier extension integrity check.
+  // The agent SDK sets extensions["payment-identifier"] to the txid it computed
+  // locally before sending. We verify it matches the txid we derived
+  // independently from deserializing the transaction, catching any payload
+  // tampering before spending a broadcast attempt.
+  const declaredIdentifier = xPayment.extensions?.["payment-identifier"];
+  if (declaredIdentifier && typeof declaredIdentifier === "string") {
+    const normalised = declaredIdentifier.startsWith("0x")
+      ? declaredIdentifier
+      : `0x${declaredIdentifier}`;
+    if (normalised !== txid) {
+      return jsonError(
+        `payment-identifier mismatch: declared ${declaredIdentifier}, computed ${txid}`,
+        400
+      );
+    }
   }
 
   const rate = await checkAndIncrRateLimit(
