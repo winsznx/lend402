@@ -67,6 +67,14 @@ const truthfulStatus = [
   "Mainnet is the target, but live mainnet smoke tests and Clarinet mainnet execution simulation still need to be completed before calling the system fully production-verified.",
 ] as const;
 
+const sdkExports = [
+  { name: "withPaymentInterceptor(config, axiosConfig?)", desc: "Returns an Axios instance with the 402 interceptor attached. Runs simulate-borrow, signs borrow-and-pay with PostConditionMode.Deny, and retries the original request transparently." },
+  { name: "mainnetConfig()", desc: "Partial AgentClientConfig for Stacks mainnet (stacks:1). Includes StacksMainnet network object and canonical sBTC and USDCx contract addresses. Spread with your privateKey, agentAddress, and vault contract details." },
+  { name: "testnetConfig()", desc: "Same as mainnetConfig() but targeting stacks:2147483648 with the corresponding testnet contract addresses." },
+  { name: "AgentClientConfig", desc: "TypeScript interface for the full interceptor configuration — privateKey, agentAddress, network, caip2Network, vault and token contract details, plus optional timeoutMs, maxPaymentRetries, and onEvent callback." },
+  { name: "AgentEvent", desc: "Structured event emitted at each stage: REQUEST_SENT · PAYMENT_REQUIRED_RECEIVED · SIMULATE_BORROW_OK · TX_BUILT · TX_SIGNED · PAYMENT_HEADER_ATTACHED · REQUEST_RETRIED · PAYMENT_CONFIRMED." },
+] as const;
+
 const repoMap = [
   { title: "contracts/lend402-vault.clar",                    body: "The lending and settlement contract." },
   { title: "server/agent-client.ts",                          body: "The Stacks payment client used by the agent path." },
@@ -533,6 +541,60 @@ export default function DocsPage() {
                 <p className="font-mono text-[10px] leading-5 text-slate-500 dark:text-slate-400">{h.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* ── Agent SDK ── */}
+      <Section id="agent-sdk" eyebrow="Agent SDK" title="npm install @winsznx/lend402">
+        <div className="space-y-4 font-mono text-[12px] leading-7 text-slate-600 dark:text-slate-300 mb-5">
+          <p>
+            The payment interceptor is published as a standalone npm package so any AI agent can
+            integrate JIT micro-lending without depending on the full Lend402 repo. Install it,
+            spread <code className="text-cyan-600 dark:text-cyan-400">mainnetConfig()</code>, add your private key and vault address, and every
+            HTTP 402 your agent hits is automatically financed and retried in a single{" "}
+            <code className="text-cyan-600 dark:text-cyan-400">await</code>.
+          </p>
+          <p>
+            On a failed borrow or signing error the interceptor throws — the
+            vault&apos;s{" "}
+            <code className="text-amber-600 dark:text-amber-400">PostConditionMode.Deny</code> guarantee
+            means no funds move. The agent&apos;s treasury is unchanged on any error path.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {sdkExports.map((item) => (
+            <div
+              key={item.name}
+              className="rounded-[22px] border border-slate-200/80 bg-white/55 p-4 dark:border-slate-800/70 dark:bg-slate-950/30"
+            >
+              <code className="block mb-2 font-mono text-[11px] font-black text-cyan-700 dark:text-cyan-400 break-all">
+                {item.name}
+              </code>
+              <p className="font-mono text-[10px] leading-6 text-slate-500 dark:text-slate-400">
+                {item.desc}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-[22px] border border-slate-200/80 bg-slate-950 p-4 dark:border-slate-800/70">
+          <p className="mb-2 font-mono text-[10px] font-black uppercase tracking-[0.18em] text-cyan-400">
+            Install
+          </p>
+          <code className="font-mono text-[12px] text-slate-300">
+            npm install @winsznx/lend402
+          </code>
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <a
+              href="https://www.npmjs.com/package/@winsznx/lend402"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[11px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              npmjs.com/package/@winsznx/lend402 →
+            </a>
           </div>
         </div>
       </Section>
