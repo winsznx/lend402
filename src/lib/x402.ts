@@ -17,7 +17,7 @@ import type {
   XPaymentResponse,
   SettlementRequest,
 } from "@/types/x402";
-import { DEFAULT_USDCX_CONTRACT, normalizeTxid } from "@/lib/network";
+import { DEFAULT_SBTC_CONTRACT, DEFAULT_USDCX_CONTRACT, normalizeTxid } from "@/lib/network";
 
 export const PAYMENT_REQUIRED_HEADER = X402_HEADERS.PAYMENT_REQUIRED;
 export const PAYMENT_SIGNATURE_HEADER = X402_HEADERS.PAYMENT_SIGNATURE;
@@ -39,12 +39,33 @@ export function usdcxAsset(network: Caip2NetworkId): string {
     : DEFAULT_USDCX_CONTRACT.testnet;
 }
 
+export function sbtcAsset(network: Caip2NetworkId): string {
+  return network === "stacks:1"
+    ? DEFAULT_SBTC_CONTRACT.mainnet
+    : DEFAULT_SBTC_CONTRACT.testnet;
+}
+
 export function encodeBase64<T>(payload: T): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 }
 
 export function decodeBase64<T>(encoded: string): T {
   return JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as T;
+}
+
+// Conservative sBTC reference price used to quote the sBTC option amount.
+// This is intentionally a floor estimate — the actual price check is performed
+// on-chain by the DIA oracle at execution time. The informational sBTC option
+// in the 402 response uses this to express a satoshi-denominated amount without
+// requiring a live oracle call on every challenge request.
+// Reads SBTC_REF_PRICE_USD8 env var; falls back to $95,000 × 10^8.
+function getSbtcRefPriceUsd8(): number {
+  const fromEnv = process.env.SBTC_REF_PRICE_USD8;
+  if (fromEnv) {
+    const parsed = Number(fromEnv);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 9_500_000_000_000; // $95,000 × 10^8 (oracle 8-decimal format)
 }
 
 export interface Build402BodyOptions {
@@ -61,15 +82,17 @@ export interface Build402BodyOptions {
   mimeType?: string;
   /** Max seconds to pay (default: 300) */
   maxTimeoutSeconds?: number;
-  /** Explicit asset contract override */
+  /** Explicit USDCx asset contract override */
   asset?: string;
+  /** sBTC asset contract override (defaults to network canonical address) */
+  sbtcAsset?: string;
   /** Extra protocol data */
   extra?: Record<string, unknown>;
 }
 
 /** Builds the JSON body returned with HTTP 402 responses. */
 export function buildPaymentRequiredBody(opts: Build402BodyOptions): PaymentRequiredBody {
-  const option: PaymentOption = {
+  const usdcxOption: PaymentOption = {
     scheme: "exact",
     network: opts.network,
     amount: String(opts.priceUsdcx),
@@ -84,6 +107,38 @@ export function buildPaymentRequiredBody(opts: Build402BodyOptions): PaymentRequ
     },
   };
 
+  // x402 V2 multi-rail: include an sBTC direct-payment option.
+  // The satoshi amount is a best-effort quote based on a conservative sBTC
+  // reference price. Agents should treat this as approximate and confirm via
+  // DIA oracle before signing. The gateway currently settles USDCx payments
+  // only; sBTC direct-pay processing is indicated by the `railStatus` field.
+  //
+  // Derivation:
+  //   price_usd  = priceUsdcx / 1e6  (USDCx is pegged $1.00)
+  //   satoshis   = price_usd / (sbtc_price_usd8 / 1e8) * 1e8
+  //              = priceUsdcx * 1e10 / sbtc_price_usd8
+  const sbtcSatoshis = Math.max(
+    1,
+    Math.ceil((opts.priceUsdcx * 10_000_000_000) / getSbtcRefPriceUsd8())
+  );
+
+  const sbtcOption: PaymentOption = {
+    scheme: "exact",
+    network: opts.network,
+    amount: String(sbtcSatoshis),
+    asset: opts.sbtcAsset ?? sbtcAsset(opts.network),
+    payTo: opts.payTo,
+    maxTimeoutSeconds: opts.maxTimeoutSeconds ?? 300,
+    extra: {
+      token: "sBTC",
+      decimals: 8,
+      amountIsApproximate: true,
+      refPriceUsd8: getSbtcRefPriceUsd8(),
+      usdcxEquivalent: opts.priceUsdcx,
+      railStatus: "active",
+    },
+  };
+
   return {
     x402Version: 2,
     error: "Payment required",
@@ -92,7 +147,7 @@ export function buildPaymentRequiredBody(opts: Build402BodyOptions): PaymentRequ
       description: opts.description,
       mimeType: opts.mimeType ?? "application/json",
     },
-    accepts: [option],
+    accepts: [usdcxOption, sbtcOption],
   };
 }
 
@@ -114,6 +169,13 @@ export interface BuildPaymentSignatureHeaderOptions {
   resource: PaymentRequiredBody["resource"];
   accepted: PaymentOption;
   signedTransactionHex: string;
+  /**
+   * x402 V2 `payment-identifier` extension.
+   * Set to the Stacks txid (0x-prefixed) computed from the signed transaction.
+   * The gateway cross-checks this against the txid it derives independently
+   * from deserializing the transaction, providing an early integrity signal.
+   */
+  paymentIdentifier?: string;
 }
 
 /** Builds the base64-encoded value of the payment-signature request header. */
@@ -127,6 +189,9 @@ export function buildPaymentSignatureHeader(
     payload: {
       transaction: opts.signedTransactionHex,
     },
+    ...(opts.paymentIdentifier && {
+      extensions: { "payment-identifier": opts.paymentIdentifier },
+    }),
   };
 
   return encodePaymentPayload(header);
