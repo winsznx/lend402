@@ -157,62 +157,6 @@ sequenceDiagram
 - The vault is designed around Bitcoin-aligned collateral, Stacks smart contracts, and fast settlement visibility through the Hiro stack.
 - The vault refreshes live sBTC pricing from the Stacks DIA oracle for mutating paths and exposes `refresh-price-cache` so read-only quote paths can stay warm on-chain.
 
-## Deployment
-
-Recommended topology:
-
-- `Vercel` for the Next.js application and route handlers
-- `Railway Postgres` for `vaults`, `calls`, and dashboard data
-- `Railway Redis` for rate limiting, replay protection, and settled transaction idempotency
-
-For a Vercel + Railway setup:
-
-- Create a Railway `PostgreSQL` service and a Railway `Redis` service.
-- Put Railway's external Postgres connection string into Vercel as `DATABASE_URL`.
-- Put Railway's external Redis connection string into Vercel as `REDIS_URL`.
-- Keep `STACKS_NETWORK`, `DEFAULT_VAULT_URL`, and contract env vars in Vercel as normal application envs.
-
-For an app service running on Railway:
-
-- Set `DATABASE_URL=${{Postgres.DATABASE_URL}}`
-- Set `REDIS_URL=${{Redis.REDIS_URL}}`
-
-Railway exposes `DATABASE_URL` for Postgres and `REDIS_URL` for Redis. Service reference variables use the `${{ServiceName.VAR_NAME}}` format.
-
-If the app is running on Vercel, do not use `railway.internal` hosts. Use Railway's public or proxied connection strings as the values for `DATABASE_URL` and `REDIS_URL`.
-
-If you want the on-chain read-only quote path to stay warm without waiting for the agent SDK fallback:
-
-- Set `LEND402_CACHE_REFRESH_PRIVATE_KEY` to a dedicated relayer wallet.
-- Set `PRICE_CACHE_REFRESH_SECRET` or `CRON_SECRET`.
-- Schedule `GET` or `POST` requests to `/api/internal/refresh-price-cache` with `Authorization: Bearer <secret>`.
-- Treat this as a best-effort warmer. The agent SDK still falls back to a live DIA read-only quote if the cache is stale.
-
-## Environment
-
-Copy `.env.local.example` to `.env.local` and provide:
-
-- `STACKS_NETWORK`
-- `NEXT_PUBLIC_STACKS_NETWORK`
-- `LEND402_VAULT_CONTRACT_ID`
-- `NEXT_PUBLIC_LEND402_VAULT_CONTRACT_ID`
-- `LEND402_AGENT_PRIVATE_KEY`
-- `LEND402_AGENT_ADDRESS`
-- `LEND402_CACHE_REFRESH_PRIVATE_KEY` if you want to automate `refresh-price-cache`
-- `PRICE_CACHE_REFRESH_SECRET` or `CRON_SECRET` if you want to protect the internal warmer route
-- `DATABASE_URL`
-- `REDIS_URL`
-- `DEFAULT_VAULT_URL` only if you want the built-in demo agent to target one specific vault by default
-- `NEXT_PUBLIC_GATEWAY_BASE_URL`
-
-For Clarinet deployment settings, copy:
-
-- `settings/Mainnet.example.toml` -> `settings/Mainnet.toml`
-- `settings/Testnet.example.toml` -> `settings/Testnet.toml`
-- `settings/Devnet.example.toml` -> `settings/Devnet.toml`
-
-Those local `settings/*.toml` files are intentionally gitignored. Never commit real mnemonics.
-
 ## Bounty Alignment
 
 ### x402 Bounty — Protocol Conformance
@@ -319,6 +263,8 @@ Still outstanding:
 - optional future migration away from the custom vault-aware interceptor once the upstream `x402-stacks` client can sign contract-call payment flows, not just direct token transfers
 
 ## Development
+
+Copy `.env.local.example` to `.env.local` and fill in your values. Self-hosters can deploy anywhere that runs Next.js with Postgres and Redis.
 
 ```bash
 npm install
