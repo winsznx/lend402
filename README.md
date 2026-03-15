@@ -4,6 +4,32 @@ Lend402 is the Stacks-native payment and credit rail for agentic APIs.
 
 The fastest way to understand it is: think Stripe for paid agent calls, except the request itself is the payment surface. A provider wraps an API behind x402, an agent presents a signed Stacks payment, and Lend402 can finance that request just in time with `sBTC` collateral and `USDCx` liquidity before the origin response is released.
 
+## Agent SDK
+
+The Lend402 payment interceptor is published as a standalone npm package so any AI agent can drop it in without depending on the full repo.
+
+```bash
+npm install @winsznx/lend402
+```
+
+```typescript
+import { withPaymentInterceptor, mainnetConfig } from "@winsznx/lend402";
+
+const agent = withPaymentInterceptor({
+  ...mainnetConfig(),
+  privateKey: process.env.AGENT_PRIVATE_KEY!,
+  agentAddress: process.env.AGENT_ADDRESS!,
+  vaultContractAddress: "SP3VAULT...",
+  vaultContractName: "lend402-vault",
+  onEvent: (event) => console.log(event.type, event.data),
+});
+
+// Automatically pays any HTTP 402 via JIT borrow — no other changes needed
+const { data } = await agent.get("https://gateway.lend402.xyz/v/{vault_id}/prices/BTC-USD/spot");
+```
+
+Package: [`@winsznx/lend402`](https://www.npmjs.com/package/@winsznx/lend402) · Source: [`packages/agent-sdk/`](packages/agent-sdk/)
+
 ## What It Does
 
 - Turns any HTTPS endpoint into a paid Stacks-native x402 endpoint.
