@@ -52,6 +52,77 @@ Lend402 addresses that by combining x402, Clarity, `sBTC`, and `USDCx` on Stacks
 6. `database/migrations/*`
    Postgres schema and migration history for vaults, calls, counters, and PRD-aligned columns.
 
+## x402 V2 Compliance Matrix
+
+Every requirement from the x402 V2 specification is mapped to its implementation below.
+
+| Requirement | Spec | Implementation | Status |
+|---|---|---|---|
+| **HTTP challenge header** | `payment-required` | `X402_HEADERS.PAYMENT_REQUIRED` from `x402-stacks` pkg | ✅ |
+| **HTTP payment header** | `payment-signature` | `X402_HEADERS.PAYMENT_SIGNATURE` from `x402-stacks` pkg | ✅ |
+| **HTTP receipt header** | `payment-response` | `X402_HEADERS.PAYMENT_RESPONSE` from `x402-stacks` pkg | ✅ |
+| **V1 backward compat** | optional | Legacy `x-payment` header accepted and normalised to V2 shape | ✅ |
+| **Protocol version field** | `x402Version: 2` | Validated in `parsePaymentSignatureHeader` and `parsePaymentRequiredHeader` | ✅ |
+| **CAIP-2 network identifier** | `stacks:1` / `stacks:2147483648` | `Caip2NetworkId` enforced on `PaymentOption.network`; cross-checked in `verifyXPayment` | ✅ |
+| **`accepts[].scheme`** | `"exact"` | Hardcoded in `buildPaymentRequiredBody`; rejected if anything else | ✅ |
+| **`accepts[].network`** | CAIP-2 string | Sourced from vault row; validated against agent config | ✅ |
+| **`accepts[].asset`** | Token contract address | `DEFAULT_USDCX_CONTRACT` selected per network; overridable per vault | ✅ |
+| **`accepts[].amount`** | numeric string (micro-units) | `String(vault.price_usdcx)` — 6-decimal USDCx micro-units | ✅ |
+| **`accepts[].payTo`** | provider principal | `vault.provider_address` | ✅ |
+| **`accepts[].maxTimeoutSeconds`** | positive integer | 300 (5 minutes); configurable | ✅ |
+| **`resource` shape** | `ResourceInfo { url, description?, mimeType? }` | Top-level object, not inline string (V1 style) | ✅ |
+| **402 body in response** | JSON body + header | Body sent as JSON; header sent as `payment-required: <base64>` | ✅ |
+| **`PostConditionMode.Deny`** | recommended | Enforced in `agent-client.ts::buildAndSignBorrowAndPay` — any undeclared asset movement aborts the tx | ✅ |
+| **Agent sBTC post-condition** | sender sends exactly N sBTC | `makeStandardFungiblePostCondition(agent, Equal, collateralSbtc)` | ✅ |
+| **Vault USDCx post-condition** | contract sends exactly M USDCx | `makeContractFungiblePostCondition(vault, Equal, netPayment)` | ✅ |
+| **Replay prevention — protocol** | Stacks transaction nonce | Each signed tx carries a unique account nonce; mempool rejects reuse | ✅ |
+| **Replay prevention — gateway** | txid idempotency check | `getSettled(txid)` checked in Redis before broadcast; `409 Conflict` on duplicate | ✅ |
+| **Settlement idempotency TTL** | implementation-defined | Redis key `settled:{txid}` with 24-hour TTL | ✅ |
+| **Per-payer rate limiting** | recommended | Sliding-window Redis sorted set: `rate:{vault_id}:{payer}` | ✅ |
+| **Challenge rate limiting** | recommended | 120 challenges / 60 s per vault per IP | ✅ |
+| **Global circuit breaker** | recommended | 10 000 requests / 60 s gateway-wide | ✅ |
+| **SSRF protection** | recommended | `isAllowedUrl()` rejects RFC 1918 addresses, loopback, and non-HTTPS origins | ✅ |
+| **CORS on 402 response** | required | `Access-Control-Allow-Origin: *` + `Expose-Headers: payment-required, payment-response` | ✅ |
+| **CORS on 200 response** | required | Same headers forwarded on all proxied responses | ✅ |
+| **`payment-response` on success** | required | `buildPaymentResponseHeader` set on every 2xx proxy response | ✅ |
+| **Transaction version check** | mainnet / testnet | `txVersionForRequest` guards against cross-network replays in `settlement.ts` | ✅ |
+| **Oracle freshness** | implementation-defined | DIA price rejected if `now − timestamp > 60 s`; contract enforces same bound | ✅ |
+
+## Payment Flow Sequence
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Gateway
+    participant Redis
+    participant Stacks as Stacks Mempool
+    participant Contract as lend402-vault.clar
+    participant Origin as Origin API
+
+    Agent->>Gateway: GET /v/{vault_id}/path
+    Gateway->>Redis: checkGlobalRateLimit()
+    Gateway->>Redis: checkAndIncrRateLimit(challenge:{vault}:{ip})
+    Gateway-->>Agent: 402 Payment Required<br/>body: PaymentRequiredBody (x402Version:2)<br/>header: payment-required (base64 JSON)
+
+    Note over Agent: Parse accepts[0]<br/>Call simulate-borrow (read-only Clarity)<br/>Build borrow-and-pay tx<br/>PostConditionMode.Deny<br/>Sign with agent private key
+
+    Agent->>Gateway: GET /v/{vault_id}/path<br/>header: payment-signature (base64 JSON)
+    Gateway->>Gateway: parsePaymentSignatureHeader()<br/>verifyXPayment() — network + payTo check<br/>validateBorrowAndPayTransaction() — contract, fn, args, amount
+    Gateway->>Redis: getSettled(txid) — replay check
+    Gateway->>Redis: checkAndIncrRateLimit(rate:{vault}:{payer})
+    Gateway->>Stacks: broadcastTransaction(signedTx)
+    Stacks->>Contract: borrow-and-pay(amount, merchant, collateral)
+    Contract->>Contract: accrue-interest()<br/>fetch-live-sbtc-price() — staleness ≤ 60s<br/>min-collateral-for-borrow() — 150% ratio check<br/>assert collateral-sbtc ≥ min-required
+    Contract->>Contract: transfer-sbtc-in(collateral → vault)
+    Contract->>Contract: transfer-usdcx-out(net-payment → merchant)
+    Contract-->>Stacks: (ok { loan-id, amount-borrowed, collateral-locked })
+    Note over Gateway: Poll /extended/v1/tx/{txid} every 2s<br/>until tx_status == "success"
+    Gateway->>Redis: setSettled(txid, { blockHeight, payer })
+    Gateway->>Origin: Forward request (payment headers stripped)<br/>x-lend402-vault-id, x-lend402-payer, x-lend402-txid injected
+    Origin-->>Gateway: 200 OK + response body
+    Gateway-->>Agent: 200 OK + response body<br/>header: payment-response (base64 JSON)<br/>{ success, transaction, network, payer, blockHeight }
+```
+
 ## Why Stacks
 
 - Settlement is fully Stacks-native: Clarity, `@stacks/transactions`, `@stacks/connect`, `@stacks/encryption`, `sBTC`, and `USDCx`.
@@ -116,6 +187,80 @@ For Clarinet deployment settings, copy:
 
 Those local `settings/*.toml` files are intentionally gitignored. Never commit real mnemonics.
 
+## Bounty Alignment
+
+### x402 Bounty — Protocol Conformance
+
+Lend402 implements x402 V2 in full and extends it into the extensions layer.
+
+**Core protocol conformance:**
+- ✅ `payment-required`, `payment-signature`, `payment-response` header names from `x402-stacks` canonical constants
+- ✅ `x402Version: 2` enforced on every encode and validate path
+- ✅ CAIP-2 network identifiers (`stacks:1` / `stacks:2147483648`) in every `PaymentOption`
+- ✅ All six required `PaymentRequirements` fields present in `accepts[]`
+- ✅ `resource` as top-level `ResourceInfo` object (V2 shape, not inline string)
+- ✅ V1 backward compat: `x-payment` header accepted and normalised to V2 `XPaymentHeader`
+- ✅ `payment-identifier` extension in every `payment-signature` payload — the Stacks txid is computed before signing and declared in `extensions["payment-identifier"]`; the gateway independently derives and cross-checks it before broadcast
+- ✅ Multi-rail `accepts[]`: every 402 response now includes both a USDCx option and an sBTC direct-pay option, demonstrating x402 V2 multi-rail awareness
+- ✅ Gateway-level replay prevention: `getSettled(txid)` in Redis before broadcast; 409 on duplicate
+- ✅ Protocol-level replay prevention: Stacks transaction nonce; mempool rejects reuse
+- ✅ Cross-network replay guard: `TransactionVersion` checked before broadcast (`settlement.ts`)
+
+**Extensions layer:**
+- `payment-identifier`: agent declares `extensions["payment-identifier"] = txid` in the payment-signature payload; gateway verifies it matches the txid it computes independently from deserializing the transaction. This is the idempotency handle the spec anticipates.
+
+---
+
+### sBTC Bounty — Capital Efficiency and Consensus-Layer Security
+
+The core Lend402 insight is that sBTC is already a treasury asset for Bitcoin-aligned agents. Requiring agents to also hold USDCx pre-funded for every API call is a capital inefficiency that breaks the agentic model.
+
+**JIT collateral as capital efficiency innovation:**
+
+An agent holding 0.001 sBTC (~$95) can access any USDCx-denominated API without holding a single USDCx. `simulate-borrow` (read-only Clarity) computes the exact collateral required at the current DIA oracle price before the agent signs anything. The agent signs one Stacks transaction (`borrow-and-pay`) that atomically: locks the sBTC, borrows the USDCx, and pays the merchant in a single block. There is no intermediate liquidity management, no pre-fund, and no idle capital.
+
+Compared to the alternative — pre-funding a USDCx account and maintaining a minimum balance — JIT collateral means:
+- Capital earns yield as sBTC (via LP market, BTC appreciation) while idle
+- Capital is only committed at the instant of API consumption
+- No per-vault or per-provider pre-funding setup
+
+**`PostConditionMode.Deny` as consensus-layer security:**
+
+The agent's signed transaction includes two Stacks protocol-enforced post-conditions before the contract executes:
+
+```
+makeStandardFungiblePostCondition(agent, Equal, collateral_sbtc, sBTC-token)
+makeContractFungiblePostCondition(vault, Equal, net_payment_usdcx, USDCx-token)
+```
+
+`PostConditionMode.Deny` means the Stacks consensus layer will abort the transaction if the contract attempts to move any amount of any asset not declared in these conditions. This is not a smart contract assertion — it is enforced by the network itself before the contract even touches state. The agent's guarantee that exactly `collateral_sbtc` leaves their wallet and exactly `net_payment_usdcx` reaches the merchant is enforced at the consensus level, not at the application level.
+
+**Oracle security:**
+
+The vault fetches a live DIA price on every `borrow-and-pay` execution and rejects any price older than 60 seconds. The minimum collateral ratio (150%) is computed against this live price, not a cached value, ensuring the protocol cannot be exploited by oracle drift between simulation and execution.
+
+---
+
+### USDCx Bounty — Zero-Idle-Supply Velocity Pattern
+
+Traditional stablecoin distribution assumes supply sits in wallets waiting to be spent. Lend402 implements a different model: **zero-idle USDCx** for the agent side.
+
+**The velocity pattern:**
+
+1. LPs deposit USDCx into the vault. This USDCx earns 2% annualised yield tracked by a global interest index — it is not idle, it is deployed as lending capital.
+2. An agent borrows USDCx for exactly one API call. The USDCx exists in the agent's effective balance for the duration of a single Stacks fast-block (Nakamoto: ~5 seconds). It never sits in the agent's wallet.
+3. The USDCx flows directly from the vault's LP pool to the API provider (merchant) in the same transaction that locks the agent's sBTC. There is no intermediate agent wallet balance.
+4. The merchant receives USDCx from the vault, not from a pre-funded agent account.
+
+From the USDCx supply perspective:
+- LP supply: deployed as lending capital, earning yield at 2% APY
+- Agent supply: zero. Agents hold sBTC, not USDCx.
+- Merchant supply: grows with each successful API call, 100% from vault disbursement
+
+The result is that USDCx supply velocity is maximised — every unit in the pool is either earning yield or being actively lent. No USDCx sits in agent wallets depreciating in opportunity cost. The protocol creates demand for USDCx as LP capital (yield-seeking) without requiring agents to acquire or hold it.
+
+---
+
 ## Judging Alignment
 
 - `Innovation`: Lend402 does not just pay for an API call; it combines x402 with just-in-time credit so agents can finance a request at execution time.
@@ -154,6 +299,12 @@ npm install
 npm run typecheck
 npm run clarinet:check
 npx next build --webpack
+```
+
+E2E conformance test (challenge phase — no credentials or deployed contract needed):
+
+```bash
+E2E_VAULT_URL=https://gateway.lend402.xyz/v/<vault_id> npm run test:e2e
 ```
 
 The production target is Stacks mainnet. Use testnet only when explicitly validating against testnet infrastructure.
