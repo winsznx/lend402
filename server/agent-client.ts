@@ -32,6 +32,7 @@ import {
   makeStandardFungiblePostCondition,
   StacksTransaction,
   SignedContractCallOptions,
+  txidFromData,
 } from "@stacks/transactions";
 import { StacksMainnet, StacksTestnet, StacksNetwork } from "@stacks/network";
 import { callReadOnlyFunction, cvToJSON } from "@stacks/transactions";
@@ -478,10 +479,15 @@ function attachPaymentInterceptor(
 
       // ── Stage 4: Serialize the signed transaction ───────────────────────
       const serialized = Buffer.from(signedTx.serialize()).toString("hex");
+      // Compute the Stacks txid deterministically from the serialized bytes.
+      // This becomes the x402 V2 `payment-identifier` extension value, letting
+      // the gateway cross-check it against the txid it derives independently.
+      const txid = `0x${txidFromData(Buffer.from(serialized, "hex"))}`;
 
       emit(config.onEvent, "TX_SIGNED", {
         tx_hex_preview: serialized.slice(0, 32) + "…",
         byte_length: serialized.length / 2,
+        payment_identifier: txid,
       });
 
       // ── Stage 5: Encode into payment-signature header (x402 V2) ────────
@@ -489,6 +495,7 @@ function attachPaymentInterceptor(
         resource: body402.resource,
         accepted: option,
         signedTransactionHex: serialized,
+        paymentIdentifier: txid,
       });
 
       emit(config.onEvent, "PAYMENT_HEADER_ATTACHED", {
