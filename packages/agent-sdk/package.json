@@ -1,0 +1,36 @@
+{
+  "name": "@winsznx/lend402",
+  "version": "0.1.0",
+  "description": "Lend402 AI Agent SDK — x402 V2 JIT micro-lending interceptor for Stacks",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["stacks", "x402", "lend402", "bitcoin", "sbtc", "payments", "ai-agent"],
+  "author": "winsznx",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/winsznx/lend402.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com/"
+  },
+  "dependencies": {
+    "@stacks/network": "6.17.0",
+    "@stacks/transactions": "6.17.0",
+    "axios": "1.13.6",
+    "x402-stacks": "2.0.1"
+  }
+}
