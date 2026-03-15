@@ -241,19 +241,19 @@ export default function AgentTerminal() {
         }}
       >
         {/* macOS-style traffic lights */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex gap-1.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex gap-1.5 shrink-0">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
             <div className="w-2.5 h-2.5 rounded-full bg-amber-400/60" />
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
           </div>
-          <span className="font-mono text-[10px] tracking-widest text-slate-600">
+          <span className="font-mono text-[10px] tracking-widest text-slate-600 truncate min-w-0">
             AGENT ACTIVITY LOG — lend402::borrow-and-pay
           </span>
         </div>
 
         {/* Phase + line count */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 shrink-0">
           <PhaseIndicator phase={phase} />
           <span className="font-mono text-[10px] tabular-nums text-slate-700">
             {terminalLines.length} lines
@@ -264,7 +264,7 @@ export default function AgentTerminal() {
       {/* ── Log viewport ── */}
       <div
         ref={viewportRef}
-        className="relative z-10 flex-1 overflow-y-auto py-2 scroll-smooth"
+        className="relative z-10 flex-1 overflow-y-auto overflow-x-auto py-2 scroll-smooth"
         style={{
           maxHeight: "400px",
           scrollbarWidth: "thin",
