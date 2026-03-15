@@ -7,6 +7,10 @@
   --font-display: "Avenir Next", "Segoe UI", "Helvetica Neue", "Trebuchet MS", sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 /* ── Scrollbar styling (dark terminal) ─────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
