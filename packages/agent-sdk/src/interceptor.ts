@@ -227,13 +227,13 @@ async function buildAndSignBorrowAndPay(
   const sbtcAssetInfo = createAssetInfo(
     config.sbtcContractAddress,
     config.sbtcContractName,
-    "sbtc"
+    "sbtc-token"
   );
 
   const usdcxAssetInfo = createAssetInfo(
     config.usdcxContractAddress,
     config.usdcxContractName,
-    "usdc"
+    "usdcx-token"
   );
 
   const txOptions: SignedContractCallOptions = {
