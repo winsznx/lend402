@@ -302,7 +302,7 @@
 (define-private (fetch-live-sbtc-price)
   (let
     (
-      (price-data (unwrap-panic (contract-call? DIA-ORACLE-CONTRACT get-value SBTC-DIA-PAIR)))
+      (price-data (unwrap-panic (contract-call? 'SP1G48FZ4Y7JY8G2Z0N51QTCYGBQ6F4J43J77BQC0.dia-oracle get-value SBTC-DIA-PAIR)))
     )
     (let
       (
@@ -403,28 +403,28 @@
 (define-private (transfer-usdcx-out
     (amount uint)
     (recipient principal))
-  (contract-call? USDCX-CONTRACT transfer amount current-contract recipient none)
+  (contract-call? 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx transfer amount current-contract recipient none)
 )
 
 ;; Transfer sBTC from a sender to this contract.
 (define-private (transfer-sbtc-in
     (amount uint)
     (sender principal))
-  (contract-call? SBTC-CONTRACT transfer amount sender current-contract none)
+  (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer amount sender current-contract none)
 )
 
 ;; Transfer sBTC from this contract back to a recipient.
 (define-private (transfer-sbtc-out
     (amount uint)
     (recipient principal))
-  (contract-call? SBTC-CONTRACT transfer amount current-contract recipient none)
+  (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer amount current-contract recipient none)
 )
 
 ;; Transfer USDCx from an LP into this contract.
 (define-private (transfer-usdcx-in
     (amount uint)
     (sender principal))
-  (contract-call? USDCX-CONTRACT transfer amount sender current-contract none)
+  (contract-call? 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx transfer amount sender current-contract none)
 )
 
 ;; ---------------------------------------------------------------------------
