@@ -396,8 +396,11 @@ function attachPaymentInterceptor(
       // Guard against infinite retry loops
       const retryCount = originalRequest._paymentRetryCount ?? 0;
       if (retryCount >= maxRetries) {
+        const settlementError =
+          (error.response?.data as Record<string, unknown>)?.error;
+        const detail = typeof settlementError === "string" ? `: ${settlementError}` : "";
         throw new Error(
-          `Lend402: max payment retries (${maxRetries}) exceeded for ${originalRequest.url}`
+          `Lend402: max payment retries (${maxRetries}) exceeded for ${originalRequest.url}${detail}`
         );
       }
       originalRequest._paymentRetryCount = retryCount + 1;
