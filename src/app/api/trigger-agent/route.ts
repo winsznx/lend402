@@ -23,6 +23,7 @@
 // =============================================================================
 
 import { withPaymentInterceptor, AgentEvent, testnetConfig, mainnetConfig } from "@/lib/agent-client";
+import { getServerStacksConfig } from "@/lib/server-config";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs"; // Required: @stacks/transactions needs Node.js crypto
@@ -103,16 +104,17 @@ export async function GET(req: Request) {
       const settlement: Partial<SettlementState> = {};
 
       // ── Network config ─────────────────────────────────────────────────────
-      const networkConfig =
-        networkName === "mainnet"
-          ? mainnetConfig(privateKey, agentAddress)
-          : testnetConfig();
+      const networkDefaults =
+        networkName === "mainnet" ? mainnetConfig() : testnetConfig();
+      const stacksConfig = getServerStacksConfig();
 
       // ── Build agent client with real Stacks.js interceptor ─────────────────
       const agentClient = withPaymentInterceptor({
         privateKey,
         agentAddress,
-        ...networkConfig,
+        ...networkDefaults,
+        vaultContractAddress: stacksConfig.vaultContractAddress,
+        vaultContractName: stacksConfig.vaultContractName,
         onEvent: (event: AgentEvent) => {
           send(event);
 

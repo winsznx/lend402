@@ -27,7 +27,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "uuid": "^10.0.0",
-    "x402-stacks": "^2.0.1"
+    "x402-stacks": "^2.0.1",
+    "@winsznx/lend402": "^0.1.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
@@ -41,5 +42,8 @@
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "vitest": "^4.1.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

@@ -13,7 +13,7 @@ import React, { useMemo } from "react";
 import { useAgent, LoanPosition, SimulatePreview } from "@/context/AgentContext";
 import GlassCard from "@/components/ui/GlassCard";
 import { Pill } from "@/components/ui/Chip";
-import { getExplorerTxUrl } from "@/lib/public-config";
+import { getExplorerTxUrl, PUBLIC_AGENT_ADDRESS } from "@/lib/public-config";
 
 // ---------------------------------------------------------------------------
 // FORMATTERS
@@ -492,8 +492,8 @@ export default function TreasuryDashboard() {
           <span
             className="w-2 h-2 rounded-full shrink-0"
             style={{
-              backgroundColor: walletAddress ? "#4ade80" : "#475569",
-              boxShadow: walletAddress ? "0 0 6px #4ade80" : "none",
+              backgroundColor: PUBLIC_AGENT_ADDRESS ? "#4ade80" : "#475569",
+              boxShadow: PUBLIC_AGENT_ADDRESS ? "0 0 6px #4ade80" : "none",
             }}
           />
           <span className="font-mono text-[10px] tracking-widest text-slate-400 dark:text-slate-600 uppercase">
@@ -501,9 +501,9 @@ export default function TreasuryDashboard() {
           </span>
         </div>
         <span className="font-mono text-[10px] text-slate-500 dark:text-slate-500">
-          {walletAddress
-            ? `${walletAddress.slice(0, 8)}…${walletAddress.slice(-6)}`
-            : "NOT CONNECTED"}
+          {PUBLIC_AGENT_ADDRESS
+            ? `${PUBLIC_AGENT_ADDRESS.slice(0, 8)}…${PUBLIC_AGENT_ADDRESS.slice(-6)}`
+            : "NOT CONFIGURED"}
         </span>
       </div>
 
