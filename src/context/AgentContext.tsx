@@ -12,7 +12,6 @@ import React, {
   useCallback,
   useRef,
   useEffect,
-  useState,
 } from "react";
 import {
   showConnect,
@@ -24,7 +23,9 @@ import {
   PUBLIC_CAIP2_NETWORK,
   PUBLIC_STACKS_NETWORK,
   PUBLIC_VAULT_CONTRACT_ID,
+  PUBLIC_AGENT_ADDRESS,
 } from "@/lib/public-config";
+import { DEFAULT_SBTC_CONTRACT, getHiroApiBaseUrl } from "@/lib/network";
 
 // ---------------------------------------------------------------------------
 // TYPES (mirrored from agent-client.ts — kept in sync manually or via shared pkg)
@@ -116,14 +117,12 @@ export interface AgentState {
 // INITIAL STATE
 // ---------------------------------------------------------------------------
 
-const INITIAL_SBTC_BALANCE = BigInt("154700"); // 0.001547 sBTC (~$150 at $97k/BTC)
-
 const INITIAL_STATE: AgentState = {
   walletAddress: null,
   isConnected: false,
   phase: "IDLE",
   treasury: {
-    sbtcBalance: INITIAL_SBTC_BALANCE,
+    sbtcBalance: 0n,
     usdcxBalance: BigInt(0),
     activePosition: null,
     simulatePreview: null,
@@ -148,7 +147,7 @@ const INITIAL_STATE: AgentState = {
       id: "boot-2",
       timestamp: Date.now() + 2,
       level: "info",
-      text: 'Agent treasury initialized. Holding 0.001547 sBTC. USDCx: $0.00. Press "Trigger Agent" to begin.',
+      text: 'Agent treasury loading... USDCx: $0.00. Press "Trigger Agent" to begin.',
     },
   ],
   lastError: null,
@@ -167,6 +166,7 @@ type AgentAction =
   | { type: "SET_ACTIVE_POSITION"; position: LoanPosition }
   | { type: "SET_PREMIUM_DATA"; data: Record<string, unknown> }
   | { type: "SET_ERROR"; error: string }
+  | { type: "SET_SBTC_BALANCE"; balance: bigint }
   | { type: "RESET_SESSION" };
 
 // ---------------------------------------------------------------------------
@@ -234,15 +234,17 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
         lastError: action.error,
       };
 
+    case "SET_SBTC_BALANCE":
+      return {
+        ...state,
+        treasury: { ...state.treasury, sbtcBalance: action.balance },
+      };
+
     case "RESET_SESSION":
       return {
         ...INITIAL_STATE,
         walletAddress: state.walletAddress,
         isConnected: state.isConnected,
-        treasury: {
-          ...INITIAL_STATE.treasury,
-          sbtcBalance: INITIAL_SBTC_BALANCE,
-        },
       };
 
     default:
@@ -320,6 +322,10 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
       const collateralBtc = (collateralSats / 1e8).toFixed(8);
       const priceRaw = Number(event.data.sbtc_price_usd8 as string);
       const priceUsd = (priceRaw / 1e8).toFixed(2);
+      const feeUsdcx = Number(event.data.origination_fee_usdcx as string);
+      const netUsdcx = Number(event.data.net_payment_usdcx as string);
+      const grossUsdcx = feeUsdcx + netUsdcx;
+      const collateralUsd = ((collateralSats / 1e8) * (priceRaw / 1e8)).toFixed(2);
       return [
         {
           id: lineId(),
@@ -345,6 +351,30 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           timestamp: ts + 3,
           level: "system",
           text: `       PostConditionMode.DENY active — any deviation causes atomic on-chain abort.`,
+        },
+        {
+          id: lineId(),
+          timestamp: ts + 4,
+          level: "info",
+          text: `[BORROW] Flash loan: ${(grossUsdcx / 1e6).toFixed(6)} USDCx borrowed from LP pool`,
+        },
+        {
+          id: lineId(),
+          timestamp: ts + 5,
+          level: "info",
+          text: `         Fee:    0.30% = ${(feeUsdcx / 1e6).toFixed(6)} USDCx → protocol treasury`,
+        },
+        {
+          id: lineId(),
+          timestamp: ts + 6,
+          level: "info",
+          text: `         Net:    ${(netUsdcx / 1e6).toFixed(6)} USDCx → merchant on delivery`,
+        },
+        {
+          id: lineId(),
+          timestamp: ts + 7,
+          level: "info",
+          text: `         Collateral: ${collateralBtc} sBTC (≈ $${collateralUsd}) locked until repaid`,
         },
       ];
     }
@@ -450,8 +480,9 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
         },
       ];
 
-    case "DATA_RETRIEVED":
-      return [
+    case "DATA_RETRIEVED": {
+      const pos = event.data.position as LoanPosition | undefined;
+      const lines: TerminalLine[] = [
         {
           id: lineId(),
           timestamp: ts,
@@ -460,6 +491,53 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
           data: event.data,
         },
       ];
+      if (pos) {
+        const collateralBtc = (pos.collateralSbtc / 1e8).toFixed(8);
+        const collateralUsd = (pos.collateralSbtc / 1e8 * pos.sbtcPriceUsd).toFixed(2);
+        const grossUsdcx = (pos.principalUsdcx / 1e6).toFixed(6);
+        const feeUsdcx = ((pos.principalUsdcx - pos.netPaymentUsdcx) / 1e6).toFixed(6);
+        const netUsdcx = (pos.netPaymentUsdcx / 1e6).toFixed(6);
+        lines.push(
+          {
+            id: lineId(),
+            timestamp: ts + 1,
+            level: "confirm",
+            text: `[LEDGER]  Position opened:`,
+          },
+          {
+            id: lineId(),
+            timestamp: ts + 2,
+            level: "confirm",
+            text: `          + ${collateralBtc} sBTC locked as collateral (≈ $${collateralUsd})`,
+          },
+          {
+            id: lineId(),
+            timestamp: ts + 3,
+            level: "confirm",
+            text: `          + ${grossUsdcx} USDCx borrowed from LP pool`,
+          },
+          {
+            id: lineId(),
+            timestamp: ts + 4,
+            level: "confirm",
+            text: `          → ${feeUsdcx} USDCx origination fee → protocol reserve`,
+          },
+          {
+            id: lineId(),
+            timestamp: ts + 5,
+            level: "confirm",
+            text: `          → ${netUsdcx} USDCx net paid to ${pos.merchantAddress.slice(0, 16)}...`,
+          },
+          {
+            id: lineId(),
+            timestamp: ts + 6,
+            level: "confirm",
+            text: `          Loan ID: ${pos.txid.slice(0, 18)}... | Block: #${pos.blockHeight}`,
+          },
+        );
+      }
+      return lines;
+    }
 
     case "ERROR":
       return [
@@ -514,6 +592,7 @@ function getConnectedAddress(): string {
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(agentReducer, INITIAL_STATE);
   const isAgentRunning = useRef(false);
+  const liveBalanceRef = useRef<bigint>(0n);
 
   // Re-hydrate wallet on mount
   useEffect(() => {
@@ -521,6 +600,33 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       const address = getConnectedAddress();
       if (address) dispatch({ type: "WALLET_CONNECTED", address });
     }
+  }, []);
+
+  // Fetch real agent sBTC balance on mount
+  useEffect(() => {
+    if (!PUBLIC_AGENT_ADDRESS) return;
+    const sbtcContractId = DEFAULT_SBTC_CONTRACT[PUBLIC_STACKS_NETWORK];
+    const apiBase = getHiroApiBaseUrl(PUBLIC_STACKS_NETWORK);
+    const tokenKey = `${sbtcContractId}::sbtc-token`;
+
+    fetch(`${apiBase}/extended/v1/address/${PUBLIC_AGENT_ADDRESS}/balances`)
+      .then((r) => r.json())
+      .then((data: { fungible_tokens?: Record<string, { balance: string }> }) => {
+        const raw = data.fungible_tokens?.[tokenKey]?.balance ?? "0";
+        const balance = BigInt(raw);
+        liveBalanceRef.current = balance;
+        dispatch({ type: "SET_SBTC_BALANCE", balance });
+        dispatch({
+          type: "PUSH_TERMINAL_LINE",
+          line: {
+            id: "treasury-loaded",
+            timestamp: Date.now(),
+            level: "info",
+            text: `Agent treasury initialized. Holding ${(Number(balance) / 1e8).toFixed(8)} sBTC. USDCx: $0.00. Press "Trigger Agent" to begin.`,
+          },
+        });
+      })
+      .catch(() => {});
   }, []);
 
   // ── Wallet connect ─────────────────────────────────────────────────────────
@@ -695,6 +801,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const resetSession = useCallback(() => {
     isAgentRunning.current = false;
     dispatch({ type: "RESET_SESSION" });
+    if (liveBalanceRef.current > 0n) {
+      dispatch({ type: "SET_SBTC_BALANCE", balance: liveBalanceRef.current });
+    }
   }, []);
 
   return (
