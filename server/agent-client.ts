@@ -191,9 +191,11 @@ async function getLiveSbtcPriceUsd8(config: AgentClientConfig): Promise<bigint> 
     throw new Error(`DIA get-value returned error: ${JSON.stringify(json)}`);
   }
 
-  const value = json.value as Record<string, { value: string }>;
-  const priceUsd8 = BigInt(value.value.value);
-  const timestamp = BigInt(value.timestamp.value);
+  // cvToJSON wraps ok-tuple as { value: { type: "(tuple ...)", value: { fields } } }
+  const inner = json.value as { value?: Record<string, { value: string }> };
+  const fields: Record<string, { value: string }> = inner.value ?? (json.value as Record<string, { value: string }>);
+  const priceUsd8 = BigInt(fields.value.value);
+  const timestamp = BigInt(fields.timestamp.value);
   const now = BigInt(Math.floor(Date.now() / 1000));
 
   if (priceUsd8 <= 0n) {
@@ -253,7 +255,9 @@ async function simulateBorrow(
       );
     }
 
-    const v = json.value as Record<string, { value: string }>;
+    // cvToJSON wraps ok-tuple as { value: { type: "(tuple ...)", value: { fields } } }
+    const inner = json.value as { value?: Record<string, { value: string }> };
+    const v: Record<string, { value: string }> = inner.value ?? (json.value as Record<string, { value: string }>);
 
     return {
       required_collateral_sbtc: BigInt(v["required-collateral-sbtc"].value),
