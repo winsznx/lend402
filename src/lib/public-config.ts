@@ -23,6 +23,9 @@ export const PUBLIC_HIRO_EXPLORER_BASE_URL = stripTrailingSlash(
 export const PUBLIC_VAULT_CONTRACT_ID =
   process.env.NEXT_PUBLIC_LEND402_VAULT_CONTRACT_ID?.trim() ?? "";
 
+export const PUBLIC_AGENT_ADDRESS =
+  process.env.NEXT_PUBLIC_LEND402_AGENT_ADDRESS?.trim() ?? "";
+
 export function getExplorerTxUrl(txid: string): string {
   return `${PUBLIC_HIRO_EXPLORER_BASE_URL}/txid/${normalizeTxid(txid)}?chain=${getExplorerChain(
     PUBLIC_STACKS_NETWORK
