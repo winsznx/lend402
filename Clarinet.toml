@@ -13,10 +13,11 @@ contract_id = 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token'
 
 [[project.requirements]]
 contract_id = 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx'
-[contracts.lend402-vault]
-path = 'contracts/lend402-vault.clar'
+[contracts.lend402-vault-v2]
+path = 'contracts/lend402-vault-v2.clar'
 clarity_version = 4
 epoch = 'latest'
+
 [repl.analysis]
 passes = [
     'call_checker',
