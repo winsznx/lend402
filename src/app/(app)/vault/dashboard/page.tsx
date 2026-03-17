@@ -35,7 +35,7 @@ function VaultDashboardContent() {
               Monitor wrapped endpoints, paid call volume, and USDCx earnings from x402 traffic.
             </p>
           </div>
-          {!state.isConnected && (
+          {state.isHydrated && !state.isConnected && (
             <Button variant="primary" size="md" onClick={connectWallet}>
               Connect Wallet to View
             </Button>
