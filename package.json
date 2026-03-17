@@ -20,6 +20,7 @@
     "@stacks/encryption": "^6.17.0",
     "@stacks/network": "^6.13.0",
     "@stacks/transactions": "^6.16.0",
+    "@winsznx/lend402": "^0.1.2",
     "axios": "^1.7.7",
     "ioredis": "^5.10.0",
     "next": "^16.1.6",
@@ -27,8 +28,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "uuid": "^10.0.0",
-    "x402-stacks": "^2.0.1",
-    "@winsznx/lend402": "^0.1.1"
+    "x402-stacks": "^2.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
