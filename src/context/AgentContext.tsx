@@ -604,9 +604,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   // Re-hydrate wallet on mount
   useEffect(() => {
+    const stored = typeof window !== "undefined"
+      ? localStorage.getItem("lend402-wallet-address")
+      : null;
+    if (stored) {
+      dispatch({ type: "WALLET_CONNECTED", address: stored });
+      return;
+    }
     if (userSession.isUserSignedIn()) {
       const address = getConnectedAddress();
       if (address) {
+        localStorage.setItem("lend402-wallet-address", address);
         dispatch({ type: "WALLET_CONNECTED", address });
         return;
       }
@@ -652,6 +660,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
           : "/",
       onFinish: () => {
         const address = getConnectedAddress();
+        if (address) localStorage.setItem("lend402-wallet-address", address);
         dispatch({ type: "WALLET_CONNECTED", address });
       },
       onCancel: () => {
@@ -670,6 +679,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnectWallet = useCallback(() => {
+    localStorage.removeItem("lend402-wallet-address");
     userSession.signUserOut("/");
     dispatch({ type: "WALLET_DISCONNECTED" });
   }, []);
