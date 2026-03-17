@@ -64,7 +64,7 @@ const truthfulStatus = [
   "Read-only quote paths use a cached DIA oracle observation on-chain, and the agent SDK can fall back to a live DIA read-only quote when the cache is cold.",
   "The repo now includes an authenticated internal route that can submit refresh-price-cache from a dedicated relayer wallet.",
   "The repo now uses official x402-stacks V2 types and header helpers on the protocol surface, but keeps a custom vault-aware signer because the stock client helper signs direct token transfers rather than borrow-and-pay contract calls.",
-  "Mainnet is the target, but live mainnet smoke tests and Clarinet mainnet execution simulation still need to be completed before calling the system fully production-verified.",
+  "The end-to-end flow has been confirmed on Stacks mainnet — borrow-and-pay executed and settled on-chain, with sBTC collateral locked, USDCx delivered to the merchant, and a Bitcoin-anchored confirmation recorded on Hiro Explorer.",
 ] as const;
 
 const sdkExports = [
@@ -72,15 +72,15 @@ const sdkExports = [
   { name: "mainnetConfig()", desc: "Partial AgentClientConfig for Stacks mainnet (stacks:1). Includes StacksMainnet network object and canonical sBTC and USDCx contract addresses. Spread with your privateKey, agentAddress, and vault contract details." },
   { name: "testnetConfig()", desc: "Same as mainnetConfig() but targeting stacks:2147483648 with the corresponding testnet contract addresses." },
   { name: "AgentClientConfig", desc: "TypeScript interface for the full interceptor configuration — privateKey, agentAddress, network, caip2Network, vault and token contract details, plus optional timeoutMs, maxPaymentRetries, and onEvent callback." },
-  { name: "AgentEvent", desc: "Structured event emitted at each stage: REQUEST_SENT · PAYMENT_REQUIRED_RECEIVED · SIMULATE_BORROW_OK · TX_BUILT · TX_SIGNED · PAYMENT_HEADER_ATTACHED · REQUEST_RETRIED · PAYMENT_CONFIRMED." },
+  { name: "AgentEvent", desc: "Structured event emitted at each stage: REQUEST_SENT · PAYMENT_REQUIRED_RECEIVED · SIMULATE_BORROW_OK · TX_BUILT · TX_SIGNED · PAYMENT_HEADER_ATTACHED · REQUEST_RETRIED · PAYMENT_CONFIRMED · DATA_RETRIEVED · ERROR." },
 ] as const;
 
 const repoMap = [
-  { title: "contracts/lend402-vault.clar",                    body: "The lending and settlement contract." },
-  { title: "server/agent-client.ts",                          body: "The Stacks payment client used by the agent path." },
-  { title: "src/app/api/v/[vault_id]/[...path]/route.ts",    body: "The payment gateway, settlement boundary, and origin proxy." },
-  { title: "src/app/(app)/vault/*",                           body: "Provider registration and dashboard pages." },
-  { title: "database/migrations/*",                           body: "Postgres schema and migration history." },
+  { title: "contracts/lend402-vault-v5.clar",                    body: "The deployed lending and settlement contract." },
+  { title: "packages/agent-sdk/src/",                            body: "The standalone npm SDK — interceptor, types, network helpers, and x402 utils." },
+  { title: "src/app/api/v/[vault_id]/[[...path]]/route.ts",      body: "The payment gateway, settlement boundary, and origin proxy." },
+  { title: "src/app/(app)/vault/*",                               body: "Provider registration and dashboard pages." },
+  { title: "database/migrations/*",                               body: "Postgres schema and migration history." },
 ] as const;
 
 const apiEndpoints = [
