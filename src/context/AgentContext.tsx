@@ -692,6 +692,23 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        type WalletProvider = {
+          request: (
+            method: string,
+            params: Record<string, unknown>
+          ) => Promise<{ result: { signature: string; publicKey: string } }>;
+        };
+        const injected = (window as Window & { LeatherProvider?: WalletProvider; StacksProvider?: WalletProvider })
+          .LeatherProvider ?? (window as Window & { LeatherProvider?: WalletProvider; StacksProvider?: WalletProvider }).StacksProvider;
+
+        if (injected) {
+          injected
+            .request("stx_signMessage", { message, network: PUBLIC_STACKS_NETWORK })
+            .then((resp) => resolve(resp.result))
+            .catch((err: unknown) => reject(err instanceof Error ? err : new Error("Signature cancelled")));
+          return;
+        }
+
         showSignMessage({
           message,
           appDetails: getAppDetails(),
