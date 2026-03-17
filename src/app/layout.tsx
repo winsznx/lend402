@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   other: {
     "talentapp:project_verification":
-      "31b678dcae1e731a93b37f2f09fbe57e89f05853459e05dd0a46e88af64b1208f69fd791ee06c14fd48e6b2190e4797d28326a2020d3d8ce788394fdd5c1cfbb",
+      "0b29b965f8fcc170b51523209386b91370321f28620b4e01d498b936f88aa80f3d13f980a41d55ef874cc26a6d480f4d9c4ad5823c1f86fc400f098d01ccff41",
   },
 };
 
