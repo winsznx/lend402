@@ -107,8 +107,9 @@ function buildLiveBorrowPreview(
 ): SimulateBorrowResult {
   const requiredUsdcxValue =
     (amountUsdcx * COLLATERAL_RATIO_BPS) / 10_000n;
+  const collateralNumerator = requiredUsdcxValue * USDCX_PRICE_USD8 * 100n;
   const requiredCollateralSbtc =
-    (requiredUsdcxValue * USDCX_PRICE_USD8 * 100n) / sbtcPriceUsd8;
+    (collateralNumerator + sbtcPriceUsd8 - 1n) / sbtcPriceUsd8;
   const originationFeeUsdcx = (amountUsdcx * PROTOCOL_FEE_BPS) / 10_000n;
 
   return {
