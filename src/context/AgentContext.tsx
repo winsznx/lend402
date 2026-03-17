@@ -107,6 +107,7 @@ export type AgentPhase =
 export interface AgentState {
   walletAddress: string | null;
   isConnected: boolean;
+  isHydrated: boolean;
   phase: AgentPhase;
   treasury: TreasuryState;
   terminalLines: TerminalLine[];
@@ -120,6 +121,7 @@ export interface AgentState {
 const INITIAL_STATE: AgentState = {
   walletAddress: null,
   isConnected: false,
+  isHydrated: false,
   phase: "IDLE",
   treasury: {
     sbtcBalance: 0n,
@@ -160,6 +162,7 @@ const INITIAL_STATE: AgentState = {
 type AgentAction =
   | { type: "WALLET_CONNECTED"; address: string }
   | { type: "WALLET_DISCONNECTED" }
+  | { type: "WALLET_HYDRATED" }
   | { type: "SET_PHASE"; phase: AgentPhase }
   | { type: "PUSH_TERMINAL_LINE"; line: TerminalLine }
   | { type: "SET_SIMULATE_PREVIEW"; preview: SimulatePreview }
@@ -180,6 +183,7 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
         ...state,
         walletAddress: action.address,
         isConnected: true,
+        isHydrated: true,
       };
 
     case "WALLET_DISCONNECTED":
@@ -187,7 +191,11 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
         ...state,
         walletAddress: null,
         isConnected: false,
+        isHydrated: true,
       };
+
+    case "WALLET_HYDRATED":
+      return { ...state, isHydrated: true };
 
     case "SET_PHASE":
       return { ...state, phase: action.phase };
@@ -598,8 +606,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (userSession.isUserSignedIn()) {
       const address = getConnectedAddress();
-      if (address) dispatch({ type: "WALLET_CONNECTED", address });
+      if (address) {
+        dispatch({ type: "WALLET_CONNECTED", address });
+        return;
+      }
     }
+    dispatch({ type: "WALLET_HYDRATED" });
   }, []);
 
   // Fetch real agent sBTC balance on mount
