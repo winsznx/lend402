@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AgentProvider, useAgent } from "@/context/AgentContext";
+import { useAgent } from "@/context/AgentContext";
 import { Chip } from "@/components/ui/Chip";
 import Button from "@/components/ui/Button";
 import BrandMark from "@/components/ui/BrandMark";
@@ -525,9 +525,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AgentProvider>
-        <AppShellInner>{children}</AppShellInner>
-      </AgentProvider>
+      <AppShellInner>{children}</AppShellInner>
     </ThemeProvider>
   );
 }
