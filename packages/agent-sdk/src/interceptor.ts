@@ -374,12 +374,17 @@ function attachPaymentInterceptor(
       });
 
       // ── Stage 3: Build the contract-call transaction ──────────────────────
+      // Add 1 sat buffer to absorb oracle price drift between simulation and
+      // on-chain execution. The contract enforces max(passed, min_required),
+      // so without a buffer a small price tick can cause a post-condition mismatch.
+      const collateralSbtc = simulation.required_collateral_sbtc + 1n;
+
       let signedTx: StacksTransaction;
       try {
         signedTx = await buildAndSignBorrowAndPay(
           amountUsdcx,
           option.payTo,
-          simulation.required_collateral_sbtc,
+          collateralSbtc,
           simulation.net_payment_usdcx,
           config
         );
@@ -391,7 +396,7 @@ function attachPaymentInterceptor(
 
       emit(config.onEvent, "TX_BUILT", {
         amount_usdcx: amountUsdcx.toString(),
-        collateral_sbtc: simulation.required_collateral_sbtc.toString(),
+        collateral_sbtc: collateralSbtc.toString(),
         merchant: option.payTo,
       });
 
