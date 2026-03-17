@@ -120,6 +120,8 @@ try {
 | `PAYMENT_HEADER_ATTACHED` | `payment-signature` header encoded |
 | `REQUEST_RETRIED` | Original request retried with payment |
 | `PAYMENT_CONFIRMED` | `payment-response` header received |
+| `DATA_RETRIEVED` | Origin response body forwarded to caller |
+| `ERROR` | Any stage failure — treasury unchanged |
 
 ## License
 
