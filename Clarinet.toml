@@ -18,6 +18,16 @@ path = 'contracts/lend402-vault-v2.clar'
 clarity_version = 4
 epoch = 'latest'
 
+[contracts.lend402-vault-v4]
+path = 'contracts/lend402-vault-v4.clar'
+clarity_version = 4
+epoch = 'latest'
+
+[contracts.lend402-vault-v5]
+path = 'contracts/lend402-vault-v5.clar'
+clarity_version = 4
+epoch = 'latest'
+
 [repl.analysis]
 passes = [
     'call_checker',
