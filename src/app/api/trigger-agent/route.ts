@@ -141,29 +141,33 @@ export async function GET(req: Request) {
         // ── Make the actual paywalled request ───────────────────────────────
         // The interceptor handles the 402 → borrow → retry lifecycle.
         // If the gateway grants access, we get the premium data in `data`.
-        const { data } = await agentClient.get<{
-          data: Record<string, unknown>;
-          meta: { agent_address?: string; payer?: string; txid: string; cost_usdcx: number };
-        }>(targetUrl);
+        const { data } = await agentClient.get<unknown>(targetUrl);
 
         // ── Build LoanPosition for the treasury panel ───────────────────────
         const position = {
-          loanId:          settlement.txid ?? data.meta.txid,
+          loanId:          settlement.txid ?? "",
           principalUsdcx:  settlement.amountUsdcx         ?? 0,
           collateralSbtc:  settlement.collateralSbtc       ?? 0,
           originationTime: Date.now(),
-          txid:            settlement.txid                 ?? data.meta.txid,
+          txid:            settlement.txid                 ?? "",
           blockHeight:     settlement.blockHeight          ?? 0,
           merchantAddress: settlement.merchantAddress      ?? "",
           netPaymentUsdcx: (settlement.amountUsdcx ?? 0) - (settlement.originationFee ?? 0),
           sbtcPriceUsd:    settlement.sbtcPriceUsd         ?? 0,
         };
 
+        // Unwrap the origin payload: if it's an object, spread it directly so
+        // that arbitrary origin shapes (not just { data, meta }) come through.
+        const payload =
+          data !== null && typeof data === "object" && !Array.isArray(data)
+            ? (data as Record<string, unknown>)
+            : { payload: data };
+
         // ── Emit DATA_RETRIEVED — AgentContext closes the EventSource on this
         send({
           type:      "DATA_RETRIEVED",
           timestamp: Date.now(),
-          data:      { ...data.data, position },
+          data:      { ...payload, position },
         });
       } catch (err) {
         send({
