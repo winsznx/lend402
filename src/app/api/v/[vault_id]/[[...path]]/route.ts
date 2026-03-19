@@ -380,7 +380,7 @@ async function handleRequest(
 
   const responseHeaders = new Headers();
   originResponse.headers.forEach((value, key) => {
-    if (!["connection", "keep-alive", "transfer-encoding"].includes(key.toLowerCase())) {
+    if (!["connection", "keep-alive", "transfer-encoding", "content-encoding"].includes(key.toLowerCase())) {
       responseHeaders.set(key, value);
     }
   });
