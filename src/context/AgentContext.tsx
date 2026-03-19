@@ -41,6 +41,8 @@ export type AgentEventType =
   | "REQUEST_RETRIED"
   | "PAYMENT_CONFIRMED"
   | "DATA_RETRIEVED"
+  | "REPAY_INITIATED"
+  | "POSITION_CLOSED"
   | "VAULT_REGISTERED"
   | "VAULT_CALL_RECEIVED"
   | "ERROR";
@@ -166,7 +168,7 @@ type AgentAction =
   | { type: "SET_PHASE"; phase: AgentPhase }
   | { type: "PUSH_TERMINAL_LINE"; line: TerminalLine }
   | { type: "SET_SIMULATE_PREVIEW"; preview: SimulatePreview }
-  | { type: "SET_ACTIVE_POSITION"; position: LoanPosition }
+  | { type: "SET_ACTIVE_POSITION"; position: LoanPosition | null }
   | { type: "SET_PREMIUM_DATA"; data: Record<string, unknown> }
   | { type: "SET_ERROR"; error: string }
   | { type: "SET_SBTC_BALANCE"; balance: bigint }
@@ -214,6 +216,19 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
 
     case "SET_ACTIVE_POSITION": {
       const pos = action.position;
+      if (pos === null) {
+        // POSITION_CLOSED — restore sBTC balance from live ref, clear debt
+        return {
+          ...state,
+          phase: "IDLE",
+          treasury: {
+            ...state.treasury,
+            activePosition: null,
+            usdcxBalance: BigInt(0),
+            simulatePreview: null,
+          },
+        };
+      }
       // Lock collateral from balance, debt is JIT-borrowed (never in wallet)
       const newSbtcBalance =
         state.treasury.sbtcBalance - BigInt(Math.round(pos.collateralSbtc));
@@ -547,6 +562,30 @@ function eventToLines(event: AgentEvent): TerminalLine[] {
       return lines;
     }
 
+    case "REPAY_INITIATED":
+      return [
+        {
+          id: lineId(),
+          timestamp: ts,
+          level: "warn",
+          text: (event.data.message as string) ??
+            `[REPAY] Closing position — broadcasting repay-loan (Loan ID: ${event.data.loan_id ?? "?"})...`,
+          data: event.data,
+        },
+      ];
+
+    case "POSITION_CLOSED":
+      return [
+        {
+          id: lineId(),
+          timestamp: ts,
+          level: "success",
+          text: (event.data.message as string) ??
+            `[CLOSED ✓] Position closed. sBTC collateral returned.`,
+          data: event.data,
+        },
+      ];
+
     case "ERROR":
       return [
         {
@@ -768,6 +807,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: "SET_PHASE", phase: "CONFIRMED" });
         break;
 
+      case "POSITION_CLOSED":
+        dispatch({ type: "SET_ACTIVE_POSITION", position: null });
+        break;
+
       case "ERROR":
         dispatch({
           type: "SET_ERROR",
@@ -807,6 +850,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
               dispatch({ type: "SET_ACTIVE_POSITION", position: pos });
             }
 
+            // Don't close yet — wait for POSITION_CLOSED which arrives after repay confirms
+          }
+
+          if (event.type === "POSITION_CLOSED") {
             evtSource.close();
             isAgentRunning.current = false;
           }
