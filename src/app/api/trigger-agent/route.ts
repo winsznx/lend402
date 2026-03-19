@@ -25,9 +25,13 @@ import { getDb } from "@/lib/db";
 import {
   makeContractCall,
   uintCV,
+  standardPrincipalCV,
+  serializeCV,
+  deserializeCV,
   broadcastTransaction,
   PostConditionMode,
   AnchorMode,
+  ClarityType,
 } from "@stacks/transactions";
 import { StacksMainnet, StacksTestnet } from "@stacks/network";
 
@@ -48,17 +52,9 @@ interface SettlementState {
   blockHeight:        number;
 }
 
-interface ActivePositionResponse {
+interface HiroCallReadResponse {
   okay: boolean;
-  result?: {
-    value?: {
-      data?: {
-        "loan-id"?:      { value: string };
-        "is-active"?:    { value: boolean };
-        "amount-owed"?:  { value: string };
-      };
-    };
-  };
+  result?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,35 +69,64 @@ async function fetchActivePosition(
   agentAddress: string,
   hiroApiBaseUrl: string
 ): Promise<{ loanId: bigint; currentDebt: bigint } | null> {
-  const url =
-    `${hiroApiBaseUrl}/v2/contracts/call-read/` +
-    `SP31DP8F8CF2GXSZBHHHK5J6Y061744E1TNFGYWYV/lend402-vault-v5/get-active-position`;
+  const stacksConfig = getServerStacksConfig();
+  const principalArg = `0x${Buffer.from(
+    serializeCV(standardPrincipalCV(agentAddress))
+  ).toString("hex")}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sender: agentAddress,
-      arguments: [`0x${Buffer.from(agentAddress).toString("hex")}`],
-    }),
-    signal: AbortSignal.timeout(8_000),
-  });
+  // Step 1: call-read get-active-position → (ok position) or (err ...)
+  const posRes = await fetch(
+    `${hiroApiBaseUrl}/v2/contracts/call-read/${stacksConfig.vaultContractAddress}/${stacksConfig.vaultContractName}/get-active-position`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender: agentAddress, arguments: [principalArg] }),
+      signal: AbortSignal.timeout(8_000),
+    }
+  );
 
-  if (!res.ok) return null;
+  if (!posRes.ok) return null;
 
-  const json = (await res.json()) as ActivePositionResponse;
-  if (!json.okay) return null;
+  const posJson = (await posRes.json()) as HiroCallReadResponse;
+  if (!posJson.okay || !posJson.result) return null;
 
-  const data = json.result?.value?.data;
-  if (!data) return null;
+  const posCV = deserializeCV(posJson.result.slice(2));
+  if (posCV.type !== ClarityType.ResponseOk) return null;
 
-  const isActive = data["is-active"]?.value;
-  if (!isActive) return null;
+  const tupleCV = posCV.value;
+  if (tupleCV.type !== ClarityType.Tuple) return null;
 
-  const loanId = BigInt(data["loan-id"]?.value ?? "0");
-  const currentDebt = BigInt(data["amount-owed"]?.value ?? "0");
+  const isActiveCV = tupleCV.data["is-active"];
+  if (!isActiveCV || isActiveCV.type !== ClarityType.BoolTrue) return null;
 
-  return { loanId, currentDebt };
+  const currentDebtCV = tupleCV.data["current-debt"];
+  if (!currentDebtCV || currentDebtCV.type !== ClarityType.UInt) return null;
+
+  const currentDebt = currentDebtCV.value;
+
+  // Step 2: map_entry borrower-active-loan → (some loan-id) needed for repay-loan arg
+  const mapRes = await fetch(
+    `${hiroApiBaseUrl}/v2/map_entry/${stacksConfig.vaultContractAddress}/${stacksConfig.vaultContractName}/borrower-active-loan`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(principalArg),
+      signal: AbortSignal.timeout(8_000),
+    }
+  );
+
+  if (!mapRes.ok) return null;
+
+  const mapJson = (await mapRes.json()) as { data?: string };
+  if (!mapJson.data) return null;
+
+  const loanIdCV = deserializeCV(mapJson.data.slice(2));
+  if (loanIdCV.type !== ClarityType.OptionalSome) return null;
+
+  const loanIdInner = loanIdCV.value;
+  if (loanIdInner.type !== ClarityType.UInt) return null;
+
+  return { loanId: loanIdInner.value, currentDebt };
 }
 
 async function broadcastRepayLoan(
@@ -138,7 +163,6 @@ async function broadcastRepayLoan(
 async function pollRepayConfirmation(
   txid: string,
   hiroApiBaseUrl: string,
-  callId: string | null
 ): Promise<void> {
   const normalizedTxid = txid.startsWith("0x") ? txid : `0x${txid}`;
   const deadline = Date.now() + 15_000;
@@ -154,36 +178,14 @@ async function pollRepayConfirmation(
 
       const tx = (await res.json()) as { tx_status: string; block_height: number };
       if (tx.tx_status === "success" && tx.block_height > 0) {
-        if (callId) {
-          await getDb()`
-            UPDATE calls
-            SET repay_status = 'confirmed',
-                repay_txid   = ${txid},
-                repay_confirmed_at = NOW()
-            WHERE call_id = ${callId}
-          `.catch(() => {});
-        }
         return;
       }
       if (tx.tx_status.startsWith("abort") || tx.tx_status.startsWith("dropped")) {
-        if (callId) {
-          await getDb()`
-            UPDATE calls SET repay_status = 'failed', repay_txid = ${txid}
-            WHERE call_id = ${callId}
-          `.catch(() => {});
-        }
         return;
       }
     } catch {
       // polling error — continue
     }
-  }
-
-  if (callId) {
-    await getDb()`
-      UPDATE calls SET repay_status = 'timeout', repay_txid = ${txid}
-      WHERE call_id = ${callId}
-    `.catch(() => {});
   }
 }
 
@@ -309,7 +311,6 @@ export async function GET(req: Request) {
       };
 
       const settlement: Partial<SettlementState> = {};
-      let callId: string | null = null;
 
       const networkDefaults =
         networkName === "mainnet" ? mainnetConfig() : testnetConfig();
@@ -377,31 +378,6 @@ export async function GET(req: Request) {
       try {
         const { data } = await agentClient.get<unknown>(targetUrl);
 
-        // ── Persist call record and get call_id for repay tracking ────────────
-        try {
-          const vaultIdMatch = targetUrl.match(/\/v\/([0-9a-f-]{36})\//i);
-          const vaultId = vaultIdMatch?.[1] ?? null;
-          if (vaultId && settlement.txid) {
-            const rows = await getDb()<[{ call_id: string }]>`
-              INSERT INTO calls (
-                vault_id, payer_address, txid, block_height,
-                amount_usdcx, path, method, settled_at, repay_status
-              ) VALUES (
-                ${vaultId}, ${agentAddress}, ${settlement.txid},
-                ${settlement.blockHeight ?? null},
-                ${settlement.amountUsdcx ?? 0},
-                ${new URL(targetUrl).pathname},
-                'GET', NOW(), 'pending'
-              )
-              ON CONFLICT DO NOTHING
-              RETURNING call_id
-            `;
-            callId = rows[0]?.call_id ?? null;
-          }
-        } catch {
-          // non-critical — don't fail the response
-        }
-
         const position = {
           loanId:          settlement.txid ?? "",
           principalUsdcx:  settlement.amountUsdcx    ?? 0,
@@ -459,7 +435,7 @@ export async function GET(req: Request) {
               });
 
               // Async poll — does not block stream close
-              pollRepayConfirmation(repayTxid, hiroApiBaseUrl, callId).then(() => {
+              pollRepayConfirmation(repayTxid, hiroApiBaseUrl).then(() => {
                 send({
                   type:      "POSITION_CLOSED",
                   timestamp: Date.now(),
@@ -477,16 +453,18 @@ export async function GET(req: Request) {
               controller.close();
             });
 
-          // Keep stream open until pollRepayConfirmation closes it
+          // Stream stays open — controller.close() called inside repay callbacks above
           return;
         }
+
+        // No open position to repay — close stream normally
+        controller.close();
       } catch (err) {
         send({
           type:      "ERROR",
           timestamp: Date.now(),
           data:      { message: (err as Error).message ?? "Agent request failed" },
         });
-      } finally {
         controller.close();
       }
     },
