@@ -363,38 +363,26 @@ function ActivePositionCard({ position }: { position: LoanPosition }) {
 // PREMIUM DATA CARD
 // ---------------------------------------------------------------------------
 
-function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
-  const d = data as {
-    btc_price_usd?: number;
-    sbtc_tvl_usd?: number;
-    lend402_active_loans?: number;
-    nakamoto_block_time_avg_sec?: number;
-    timestamp?: string;
-    source?: string;
-  };
+const CELL_COLORS = ["#f59e0b", "#a78bfa", "#22d3ee", "#4ade80", "#f97316", "#ec4899"];
 
-  const cells = [
-    d.btc_price_usd !== undefined && {
-      label: "BTC/USD",
-      value: `$${d.btc_price_usd.toLocaleString()}`,
-      color: "#f59e0b",
-    },
-    d.sbtc_tvl_usd !== undefined && {
-      label: "sBTC TVL",
-      value: `$${(d.sbtc_tvl_usd / 1e6).toFixed(1)}M`,
-      color: "#a78bfa",
-    },
-    d.lend402_active_loans !== undefined && {
-      label: "Active Loans",
-      value: d.lend402_active_loans.toLocaleString(),
-      color: "#22d3ee",
-    },
-    d.nakamoto_block_time_avg_sec !== undefined && {
-      label: "Avg Block",
-      value: `${d.nakamoto_block_time_avg_sec}s`,
-      color: "#4ade80",
-    },
-  ].filter(Boolean) as { label: string; value: string; color: string }[];
+// Keys injected by the gateway that are not part of the origin's response.
+const GATEWAY_INTERNAL_KEYS = new Set(["position"]);
+
+function formatPrimitiveValue(value: string | number | boolean | null): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+
+function isPrimitive(v: unknown): v is string | number | boolean | null {
+  return v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+}
+
+function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
+  const entries = Object.entries(data).filter(([k]) => !GATEWAY_INTERNAL_KEYS.has(k));
+
+  const primitiveEntries = entries.filter(([, v]) => isPrimitive(v)) as [string, string | number | boolean | null][];
+  const complexEntries   = entries.filter(([, v]) => !isPrimitive(v));
 
   return (
     <GlassCard accentColor="#4ade80">
@@ -414,28 +402,44 @@ function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {cells.map((c) => (
-            <div
-              key={c.label}
-              className="rounded-lg px-2.5 py-2 bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40"
-            >
-              <p className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1">
-                {c.label}
-              </p>
-              <p
-                className="font-mono text-sm font-black tabular-nums"
-                style={{ color: c.color }}
+        {primitiveEntries.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            {primitiveEntries.map(([key, value], i) => (
+              <div
+                key={key}
+                className="rounded-lg px-2.5 py-2 bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40"
               >
-                {c.value}
-              </p>
-            </div>
-          ))}
-        </div>
+                <p className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest mb-1 truncate">
+                  {key}
+                </p>
+                <p
+                  className="font-mono text-sm font-black tabular-nums break-all"
+                  style={{ color: CELL_COLORS[i % CELL_COLORS.length] }}
+                >
+                  {formatPrimitiveValue(value)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {d.source && (
-          <p className="font-mono text-[9px] text-slate-400 dark:text-slate-700 mt-3">
-            Source: {d.source} · {d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : "—"}
+        {complexEntries.map(([key, value]) => (
+          <div
+            key={key}
+            className="mb-2 rounded-lg bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 overflow-hidden"
+          >
+            <p className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest px-2.5 pt-2 pb-1">
+              {key}
+            </p>
+            <pre className="font-mono text-[10px] text-slate-600 dark:text-slate-400 px-2.5 pb-2 overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(value, null, 2)}
+            </pre>
+          </div>
+        ))}
+
+        {entries.length === 0 && (
+          <p className="font-mono text-[10px] text-slate-500 dark:text-slate-600">
+            (empty response)
           </p>
         )}
       </div>
