@@ -75,7 +75,7 @@ async function pollForConfirmation(
     if (transaction.tx_status === "success" && transaction.block_height > 0) {
       return {
         blockHeight: transaction.block_height,
-        confirmedAt: transaction.burn_block_time,
+        confirmedAt: transaction.burn_block_time || Math.floor(Date.now() / 1000),
       };
     }
 
