@@ -198,15 +198,15 @@ async function countDailyCalls(agentAddress: string): Promise<number> {
 }
 
 function isAuthorizedOrigin(req: Request): boolean {
-  const allowedOrigin = "https://lend402.xyz";
-  const demoToken    = process.env.DEMO_ACCESS_TOKEN;
+  const allowedOrigins = ["https://lend402.xyz", "https://www.lend402.xyz"];
+  const demoToken      = process.env.DEMO_ACCESS_TOKEN;
 
-  const origin   = req.headers.get("origin") ?? "";
-  const referer  = req.headers.get("referer") ?? "";
+  const origin     = req.headers.get("origin") ?? "";
+  const referer    = req.headers.get("referer") ?? "";
   const authHeader = req.headers.get("authorization") ?? "";
 
-  if (origin === allowedOrigin) return true;
-  if (referer.startsWith(allowedOrigin)) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (allowedOrigins.some((o) => referer.startsWith(o))) return true;
   if (demoToken && authHeader === `Bearer ${demoToken}`) return true;
 
   // Allow local development
