@@ -11,7 +11,7 @@ import type { SettlementReceipt, SettlementRequest } from "@/types/x402";
 import { getHiroApiBaseUrl, normalizeTxid } from "@/lib/network";
 
 const POLL_INTERVAL_MS = 2_000;
-const POLL_TIMEOUT_MS = 20_000;
+const POLL_TIMEOUT_MS = 60_000;
 
 interface TxStatusResponse {
   tx_status: string;
