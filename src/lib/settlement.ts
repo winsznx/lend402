@@ -70,7 +70,13 @@ async function pollForConfirmation(
       throw new Error(`Stacks API returned ${response.status} while polling ${txid}: ${body}`);
     }
 
-    const transaction = (await response.json()) as TxStatusResponse;
+    let transaction: TxStatusResponse;
+    try {
+      transaction = (await response.json()) as TxStatusResponse;
+    } catch {
+      // Malformed response (e.g. encoding issue) — treat as pending and retry
+      continue;
+    }
 
     if (transaction.tx_status === "success" && transaction.block_height > 0) {
       return {
