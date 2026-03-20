@@ -35,8 +35,9 @@ import {
 } from "@stacks/transactions";
 import { StacksMainnet, StacksTestnet } from "@stacks/network";
 
-export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const dynamic    = "force-dynamic";
+export const runtime    = "nodejs";
+export const maxDuration = 60;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -165,7 +166,7 @@ async function pollRepayConfirmation(
   hiroApiBaseUrl: string,
 ): Promise<void> {
   const normalizedTxid = txid.startsWith("0x") ? txid : `0x${txid}`;
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 60_000;
 
   while (Date.now() < deadline) {
     await sleep(2_000);
