@@ -443,21 +443,29 @@ function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
                   {(value as Record<string, unknown>[]).map((item, idx) => (
                     <div
                       key={idx}
-                      className="rounded-md bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/30 px-2.5 py-2"
+                      className="rounded-md bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/30 px-2.5 py-2 overflow-hidden"
                     >
-                      {Object.entries(item).map(([k, v], i) => (
-                        <div key={k} className="flex justify-between items-baseline gap-2 py-0.5">
-                          <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest shrink-0">
-                            {k}
-                          </span>
-                          <span
-                            className="font-mono text-[10px] font-semibold truncate text-right"
-                            style={{ color: CELL_COLORS[i % CELL_COLORS.length] }}
-                          >
-                            {isPrimitive(v) ? formatPrimitiveValue(v) : JSON.stringify(v)}
-                          </span>
-                        </div>
-                      ))}
+                      {Object.entries(item).map(([k, v], i) => {
+                        const displayValue = Array.isArray(v)
+                          ? (v as unknown[]).map(String).join(", ")
+                          : isPrimitive(v)
+                          ? String(formatPrimitiveValue(v))
+                          : JSON.stringify(v);
+                        return (
+                          <div key={k} className="grid grid-cols-[auto_1fr] gap-x-2 items-baseline py-0.5 min-w-0">
+                            <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest whitespace-nowrap">
+                              {k}
+                            </span>
+                            <span
+                              className="font-mono text-[10px] font-semibold truncate text-right overflow-hidden"
+                              style={{ color: CELL_COLORS[i % CELL_COLORS.length] }}
+                              title={displayValue}
+                            >
+                              {displayValue}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
