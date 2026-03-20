@@ -445,40 +445,23 @@ export async function GET(req: Request) {
           )
             .then((repayTxid) => {
               send({
-                type:      "REPAY_INITIATED",
+                type:      "POSITION_CLOSED",
                 timestamp: Date.now(),
                 data: {
                   loan_id:    livePos.loanId.toString(),
                   repay_txid: repayTxid,
-                  message:    `[REPAY] Closing position — broadcasting repay-loan...`,
+                  message:    `[CLOSED ✓] Repay broadcast. Loan ID: ${livePos.loanId} | TXID: ${repayTxid} | sBTC collateral returning on-chain.`,
                 },
-              });
-              send({
-                type:      "REPAY_INITIATED",
-                timestamp: Date.now() + 1,
-                data: { message: "[REPAY] Awaiting Nakamoto confirmation (~5 seconds)..." },
-              });
-
-              // Async poll — does not block stream close
-              pollRepayConfirmation(repayTxid, hiroApiBaseUrl).then(() => {
-                send({
-                  type:      "POSITION_CLOSED",
-                  timestamp: Date.now(),
-                  data: {
-                    loan_id:    livePos.loanId.toString(),
-                    repay_txid: repayTxid,
-                    message:    `[CLOSED ✓] Position closed. Loan ID: ${livePos.loanId} | TXID: ${repayTxid} | sBTC collateral returned.`,
-                  },
-                });
-                controller.close();
               });
             })
             .catch((err: unknown) => {
               console.error("[repay-loan] broadcast failed:", (err as Error).message);
+            })
+            .finally(() => {
               controller.close();
             });
 
-          // Stream stays open — controller.close() called inside repay callbacks above
+          // Stream stays open — controller.close() called in repay callbacks above
           return;
         }
 
