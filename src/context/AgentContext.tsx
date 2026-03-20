@@ -92,6 +92,8 @@ export interface TreasuryState {
   simulatePreview: SimulatePreview | null;
   /** Retrieved premium data payload */
   premiumData: Record<string, unknown> | null;
+  /** Both txids after the full borrow→data→repay cycle completes */
+  settlementTxids: { borrowTxid: string; repayTxid: string } | null;
 }
 
 export type AgentPhase =
@@ -131,6 +133,7 @@ const INITIAL_STATE: AgentState = {
     activePosition: null,
     simulatePreview: null,
     premiumData: null,
+    settlementTxids: null,
   },
   terminalLines: [
     {
@@ -172,6 +175,7 @@ type AgentAction =
   | { type: "SET_PREMIUM_DATA"; data: Record<string, unknown> }
   | { type: "SET_ERROR"; error: string }
   | { type: "SET_SBTC_BALANCE"; balance: bigint }
+  | { type: "CLOSE_POSITION"; repayTxid: string }
   | { type: "RESET_SESSION" };
 
 // ---------------------------------------------------------------------------
@@ -256,6 +260,23 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
         phase: "ERROR",
         lastError: action.error,
       };
+
+    case "CLOSE_POSITION": {
+      const borrowTxid = state.treasury.activePosition?.txid ?? "";
+      return {
+        ...state,
+        phase: "IDLE",
+        treasury: {
+          ...state.treasury,
+          activePosition: null,
+          usdcxBalance: BigInt(0),
+          simulatePreview: null,
+          settlementTxids: borrowTxid
+            ? { borrowTxid, repayTxid: action.repayTxid }
+            : null,
+        },
+      };
+    }
 
     case "SET_SBTC_BALANCE":
       return {
@@ -808,7 +829,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         break;
 
       case "POSITION_CLOSED":
-        dispatch({ type: "SET_ACTIVE_POSITION", position: null });
+        dispatch({ type: "CLOSE_POSITION", repayTxid: (event.data.repay_txid as string) ?? "" });
         break;
 
       case "ERROR":
@@ -826,6 +847,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     isAgentRunning.current = true;
 
     dispatch({ type: "SET_PHASE", phase: "REQUESTING" });
+    dispatch({ type: "SET_PREMIUM_DATA", data: {} });
 
     try {
       const sseUrl = targetUrl

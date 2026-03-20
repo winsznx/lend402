@@ -423,19 +423,52 @@ function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
           </div>
         )}
 
-        {complexEntries.map(([key, value]) => (
-          <div
-            key={key}
-            className="mb-2 rounded-lg bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 overflow-hidden"
-          >
-            <p className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest px-2.5 pt-2 pb-1">
-              {key}
-            </p>
-            <pre className="font-mono text-[10px] text-slate-600 dark:text-slate-400 px-2.5 pb-2 overflow-x-auto whitespace-pre-wrap break-all">
-              {JSON.stringify(value, null, 2)}
-            </pre>
-          </div>
-        ))}
+        {complexEntries.map(([key, value]) => {
+          const isObjArray =
+            Array.isArray(value) &&
+            value.length > 0 &&
+            typeof value[0] === "object" &&
+            value[0] !== null;
+
+          return (
+            <div
+              key={key}
+              className="mb-2 rounded-lg bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 overflow-hidden"
+            >
+              <p className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest px-2.5 pt-2 pb-1">
+                {key} {Array.isArray(value) ? `(${(value as unknown[]).length})` : ""}
+              </p>
+              {isObjArray ? (
+                <div className="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                  {(value as Record<string, unknown>[]).map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-md bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/30 px-2.5 py-2"
+                    >
+                      {Object.entries(item).map(([k, v], i) => (
+                        <div key={k} className="flex justify-between items-baseline gap-2 py-0.5">
+                          <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest shrink-0">
+                            {k}
+                          </span>
+                          <span
+                            className="font-mono text-[10px] font-semibold truncate text-right"
+                            style={{ color: CELL_COLORS[i % CELL_COLORS.length] }}
+                          >
+                            {isPrimitive(v) ? formatPrimitiveValue(v) : JSON.stringify(v)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <pre className="font-mono text-[10px] text-slate-600 dark:text-slate-400 px-2.5 pb-2 overflow-x-auto whitespace-pre-wrap break-all">
+                  {JSON.stringify(value, null, 2)}
+                </pre>
+              )}
+            </div>
+          );
+        })}
 
         {entries.length === 0 && (
           <p className="font-mono text-[10px] text-slate-500 dark:text-slate-600">
@@ -480,7 +513,7 @@ function IdlePlaceholder() {
 export default function TreasuryDashboard() {
   const { state } = useAgent();
   const { treasury, walletAddress, phase } = state;
-  const { sbtcBalance, usdcxBalance, activePosition, simulatePreview, premiumData } = treasury;
+  const { sbtcBalance, usdcxBalance, activePosition, simulatePreview, premiumData, settlementTxids } = treasury;
 
   const sbtcDisplay  = formatSbtc(sbtcBalance);
   const usdcxDisplay = `$${formatUsdcx(usdcxBalance)}`;
@@ -557,15 +590,72 @@ export default function TreasuryDashboard() {
       )}
 
       {/* ── Premium data payload ── */}
-      {premiumData && Object.keys(premiumData).length > 0 && (
+      {premiumData && Object.keys(premiumData).filter(k => !GATEWAY_INTERNAL_KEYS.has(k)).length > 0 && (
         <div>
           <SectionHeader label="Retrieved Data" />
           <PremiumDataCard data={premiumData} />
         </div>
       )}
 
+      {/* ── Settlement proof — both txids after full cycle ── */}
+      {settlementTxids && (
+        <div>
+          <SectionHeader label="Settlement" />
+          <div className="flex flex-col gap-2">
+            <a
+              href={explorerUrl(settlementTxids.borrowTxid)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between rounded-xl px-3.5 py-3 group transition-all duration-200
+                bg-cyan-50 border-2 border-slate-900 hover:-translate-x-0.5 hover:-translate-y-0.5
+                shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
+                active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+                dark:bg-cyan-500/8 dark:border-cyan-500/40 dark:hover:border-cyan-400
+                dark:shadow-[3px_3px_0px_0px_rgba(34,211,238,0.35)] dark:hover:shadow-[4px_4px_0px_0px_rgba(34,211,238,0.45)]"
+            >
+              <div>
+                <p className="font-mono text-[10px] font-black tracking-widest text-slate-900 dark:text-cyan-300 uppercase mb-0.5">
+                  Borrow-and-Pay →
+                </p>
+                <p className="font-mono text-[9px] text-slate-500 dark:text-cyan-700">
+                  TXID: {truncateTxid(settlementTxids.borrowTxid)}
+                </p>
+              </div>
+              <svg className="w-4 h-4 text-slate-400 dark:text-cyan-600 group-hover:text-slate-700 dark:group-hover:text-cyan-400 transition-colors" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+            {settlementTxids.repayTxid && (
+              <a
+                href={explorerUrl(settlementTxids.repayTxid)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between rounded-xl px-3.5 py-3 group transition-all duration-200
+                  bg-emerald-50 border-2 border-slate-900 hover:-translate-x-0.5 hover:-translate-y-0.5
+                  shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
+                  active:translate-x-0.5 active:translate-y-0.5 active:shadow-none
+                  dark:bg-emerald-500/8 dark:border-emerald-500/40 dark:hover:border-emerald-400
+                  dark:shadow-[3px_3px_0px_0px_rgba(74,222,128,0.35)] dark:hover:shadow-[4px_4px_0px_0px_rgba(74,222,128,0.45)]"
+              >
+                <div>
+                  <p className="font-mono text-[10px] font-black tracking-widest text-slate-900 dark:text-emerald-300 uppercase mb-0.5">
+                    Repay-Loan →
+                  </p>
+                  <p className="font-mono text-[9px] text-slate-500 dark:text-emerald-700">
+                    TXID: {truncateTxid(settlementTxids.repayTxid)}
+                  </p>
+                </div>
+                <svg className="w-4 h-4 text-slate-400 dark:text-emerald-600 group-hover:text-slate-700 dark:group-hover:text-emerald-400 transition-colors" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Idle placeholder ── */}
-      {phase === "IDLE" && !activePosition && <IdlePlaceholder />}
+      {phase === "IDLE" && !activePosition && !settlementTxids && <IdlePlaceholder />}
     </div>
   );
 }
