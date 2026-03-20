@@ -31,7 +31,7 @@ function resolveVaultUrl(input: string, path: string): string {
 
 export default function VaultCallInput({ onTrigger }: Props) {
   const [vaultIdOrUrl, setVaultIdOrUrl] = useState("");
-  const [pathSuffix, setPathSuffix] = useState("/prices/BTC-USD/spot");
+  const [pathSuffix, setPathSuffix] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(event: React.FormEvent) {
