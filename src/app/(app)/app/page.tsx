@@ -430,7 +430,7 @@ function CommandCenterDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-[13fr_7fr] gap-5 items-start">
 
           {/* Left column: flow → vault input → terminal */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-5 min-w-0">
             <FlowDiagram />
             <VaultCallInput onTrigger={setTargetUrl} />
             <ErrorBanner />
@@ -443,7 +443,7 @@ function CommandCenterDashboard() {
           </div>
 
           {/* Right column: sticky treasury panel */}
-          <div id="treasury" className="flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start">
+          <div id="treasury" className="flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start min-w-0 overflow-hidden">
             <SectionLabel>Treasury State</SectionLabel>
             <TreasuryDashboard />
           </div>

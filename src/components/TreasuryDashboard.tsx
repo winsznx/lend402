@@ -446,23 +446,24 @@ function PremiumDataCard({ data }: { data: Record<string, unknown> }) {
                       className="rounded-md bg-white/60 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/30 px-2.5 py-2 overflow-hidden"
                     >
                       {Object.entries(item).map(([k, v], i) => {
-                        const displayValue = Array.isArray(v)
+                        const raw = Array.isArray(v)
                           ? (v as unknown[]).map(String).join(", ")
                           : isPrimitive(v)
                           ? String(formatPrimitiveValue(v))
                           : JSON.stringify(v);
+                        const displayValue = raw.length > 60 ? raw.slice(0, 60) + "…" : raw;
                         return (
-                          <div key={k} className="grid grid-cols-[auto_1fr] gap-x-2 items-baseline py-0.5 min-w-0">
-                            <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest whitespace-nowrap">
+                          <div key={k} className="py-0.5">
+                            <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase tracking-widest">
                               {k}
                             </span>
-                            <span
-                              className="font-mono text-[10px] font-semibold truncate text-right overflow-hidden"
+                            <p
+                              className="font-mono text-[10px] font-semibold break-words"
                               style={{ color: CELL_COLORS[i % CELL_COLORS.length] }}
-                              title={displayValue}
+                              title={raw}
                             >
                               {displayValue}
-                            </span>
+                            </p>
                           </div>
                         );
                       })}
