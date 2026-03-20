@@ -57,7 +57,11 @@ function buildProxyTarget(originUrl: string, pathSegments: string[], search: str
     target.pathname = `${basePath}/${suffix}`.replace(/\/{2,}/g, "/");
   }
 
-  target.search = search;
+  // Merge request query params on top of origin's registered params (don't replace)
+  if (search) {
+    const extra = new URLSearchParams(search);
+    extra.forEach((value, key) => target.searchParams.set(key, value));
+  }
   return target.toString();
 }
 
