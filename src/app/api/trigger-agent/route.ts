@@ -265,15 +265,39 @@ export async function GET(req: Request) {
   const hiroApiBaseUrl = stacksConfig.hiroApiBaseUrl;
 
   // ── Fix 1a: Pre-flight open position check ─────────────────────────────────
-  let openPosition = await fetchActivePosition(agentAddress, hiroApiBaseUrl).catch(() => null);
-  if (openPosition) {
-    await sleep(8_000);
-    openPosition = await fetchActivePosition(agentAddress, hiroApiBaseUrl).catch(() => null);
-    if (openPosition) {
-      return new Response(
-        JSON.stringify({ error: "Agent position still open from previous call. Retry in a few seconds." }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
-      );
+  // If a stuck position is found, attempt auto-repay before starting a new cycle.
+  {
+    const stuckPos = await fetchActivePosition(agentAddress, hiroApiBaseUrl).catch(() => null);
+    if (stuckPos) {
+      // Give the chain a moment in case a repay is already in-flight
+      await sleep(6_000);
+      const stillOpen = await fetchActivePosition(agentAddress, hiroApiBaseUrl).catch(() => null);
+      if (stillOpen) {
+        // Attempt to repay the stuck loan before starting a new cycle
+        try {
+          const repayTxid = await broadcastRepayLoan(
+            privateKey,
+            agentAddress,
+            stillOpen.loanId,
+            stillOpen.currentDebt,
+            networkName
+          );
+          await pollRepayConfirmation(repayTxid, hiroApiBaseUrl);
+          // Give one more check after confirmation
+          const afterRepay = await fetchActivePosition(agentAddress, hiroApiBaseUrl).catch(() => null);
+          if (afterRepay) {
+            return new Response(
+              errorFrame("Agent has an open loan that could not be auto-repaid. Check the contract state."),
+              { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } }
+            );
+          }
+        } catch {
+          return new Response(
+            errorFrame("Agent has an open loan from a previous call. Auto-repay failed — retry in a few seconds."),
+            { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } }
+          );
+        }
+      }
     }
   }
 
