@@ -315,7 +315,7 @@ function ErrorBanner() {
 
 function ContractRefBar() {
   const refs = [
-    { label: "VAULT CONTRACT", value: "contracts/lend402-vault.clar", color: "#a78bfa" },
+    { label: "VAULT CONTRACT", value: "contracts/lend402-vault-v5.clar", color: "#a78bfa" },
     { label: "FUNCTION", value: "borrow-and-pay", color: "#f59e0b" },
     { label: "POST-CONDITIONS", value: "PostConditionMode.Deny", color: "#f87171" },
   ] as const;

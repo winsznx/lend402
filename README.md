@@ -273,11 +273,32 @@ npm run clarinet:check
 npx next build --webpack
 ```
 
-E2E conformance test (challenge phase — no credentials or deployed contract needed):
+**Phase 1 — x402 conformance (no credentials needed):**
+
+Hits the live gateway and validates the full 402 challenge response against the x402 V2 spec. Safe to run from anywhere.
 
 ```bash
-E2E_VAULT_URL=https://gateway.lend402.xyz/v/<vault_id> npm run test:e2e
+E2E_VAULT_URL=https://lend402.xyz/v/80d6a30e-04f6-4f11-b604-b3806fb5b757/ npm run test:e2e
 ```
+
+**Phase 2 — Full payment flow (requires funded agent wallet):**
+
+Constructs a real `borrow-and-pay` Stacks transaction, settles it on mainnet, and asserts a `200` response with a confirmed `payment-response` receipt. You need:
+
+- A Stacks mainnet wallet with sBTC (minimum ~3 satoshis per call; dust amounts work)
+- `LEND402_AGENT_PRIVATE_KEY` — 33-byte compressed WIF private key
+- `LEND402_AGENT_ADDRESS` — corresponding `SP…` address
+- `LEND402_VAULT_CONTRACT_ID` — `SP31DP8F8CF2GXSZBHHHK5J6Y061744E1TNFGYWYV.lend402-vault-v5`
+
+```bash
+E2E_VAULT_URL=https://lend402.xyz/v/80d6a30e-04f6-4f11-b604-b3806fb5b757/ \
+LEND402_AGENT_PRIVATE_KEY=<your-private-key> \
+LEND402_AGENT_ADDRESS=<your-SP-address> \
+LEND402_VAULT_CONTRACT_ID=SP31DP8F8CF2GXSZBHHHK5J6Y061744E1TNFGYWYV.lend402-vault-v5 \
+npm run test:e2e
+```
+
+Phase 2 broadcasts a live transaction and polls for Nakamoto fast-block confirmation (~5–10 seconds). The vault at the URL above returns live MidlLaunch token launch data — the API call costs `$0.002` per request paid in USDCx, auto-repaid after retrieval.
 
 The production target is Stacks mainnet. Use testnet only when explicitly validating against testnet infrastructure.
 

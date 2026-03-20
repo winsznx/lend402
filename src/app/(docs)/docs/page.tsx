@@ -108,7 +108,7 @@ const PARTICIPANTS: Record<string, { label: string; color: string }> = {
   gateway:  { label: "Gateway",            color: "#a78bfa" },
   redis:    { label: "Redis",              color: "#f87171" },
   stacks:   { label: "Stacks Mempool",     color: "#4ade80" },
-  contract: { label: "lend402-vault.clar", color: "#f59e0b" },
+  contract: { label: "lend402-vault-v5.clar", color: "#f59e0b" },
   origin:   { label: "Origin API",         color: "#94a3b8" },
 };
 
