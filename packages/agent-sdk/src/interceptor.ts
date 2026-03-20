@@ -71,7 +71,7 @@ interface SimulateBorrowResult {
 // CONSTANTS
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 55_000;
 const DEFAULT_MAX_RETRIES = 1;
 const COLLATERAL_RATIO_BPS = 15_000n;
 const PROTOCOL_FEE_BPS = 30n;

@@ -351,7 +351,6 @@ export async function GET(req: Request) {
         ...networkDefaults,
         vaultContractAddress: stacksConfig.vaultContractAddress,
         vaultContractName:    stacksConfig.vaultContractName,
-        timeoutMs: 55_000,
         onEvent: async (event: AgentEvent) => {
           // Merchant allowlist check at TX_BUILT — before signing or broadcast
           if (event.type === "TX_BUILT" && !merchantValidated) {
