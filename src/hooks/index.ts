@@ -11,3 +11,5 @@ export { useInterval } from "./useInterval";
 export { usePrevious } from "./usePrevious";
 
 export { useToggle } from "./useToggle";
+
+export { useWindowSize } from "./useWindowSize";
