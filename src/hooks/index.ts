@@ -5,3 +5,5 @@ export { useLocalStorage } from "./useLocalStorage";
 export { useScrollLock } from "./useScrollLock";
 export { useCopyToClipboard } from "./useCopyToClipboard";
 export { useIsMounted } from "./useIsMounted";
+
+export { useInterval } from "./useInterval";
