@@ -16,6 +16,7 @@ const eslintConfig = [
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "prefer-const": "error",
       "no-var": "error",
+      eqeqeq: ["error", "always"],
     },
   },
 ];
