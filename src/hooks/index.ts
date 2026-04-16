@@ -22,3 +22,4 @@ export { useTimeout } from "./useTimeout";
 export { useEventListener } from "./useEventListener";
 export { useKeyPress } from "./useKeyPress";
 export { useHover } from "./useHover";
+export { useMount } from "./useMount";
