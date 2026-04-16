@@ -15,3 +15,5 @@ export { useToggle } from "./useToggle";
 export { useWindowSize } from "./useWindowSize";
 
 export { useOnlineStatus } from "./useOnlineStatus";
+
+export { useAsync } from "./useAsync";
