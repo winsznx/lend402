@@ -24,3 +24,4 @@ export { useKeyPress } from "./useKeyPress";
 export { useHover } from "./useHover";
 export { useMount } from "./useMount";
 export { useUnmount } from "./useUnmount";
+export { useDocumentTitle } from "./useDocumentTitle";
