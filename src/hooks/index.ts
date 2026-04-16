@@ -29,3 +29,4 @@ export { useUpdate } from "./useUpdate";
 export { useSessionStorage } from "./useSessionStorage";
 export { useFocus } from "./useFocus";
 export { useIntersectionObserver } from "./useIntersectionObserver";
+export { useDebouncedCallback } from "./useDebouncedCallback";
