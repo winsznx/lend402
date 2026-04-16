@@ -28,3 +28,4 @@ export { useDocumentTitle } from "./useDocumentTitle";
 export { useUpdate } from "./useUpdate";
 export { useSessionStorage } from "./useSessionStorage";
 export { useFocus } from "./useFocus";
+export { useIntersectionObserver } from "./useIntersectionObserver";
