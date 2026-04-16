@@ -19,3 +19,4 @@ export { useOnlineStatus } from "./useOnlineStatus";
 export { useAsync } from "./useAsync";
 export { useCountdown } from "./useCountdown";
 export { useTimeout } from "./useTimeout";
+export { useEventListener } from "./useEventListener";
