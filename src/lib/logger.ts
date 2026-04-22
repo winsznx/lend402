@@ -11,6 +11,7 @@ function emit(level: LogLevel, message: string, context?: LogContext): void {
     message,
     ...context,
   };
+  // eslint-disable-next-line no-console
   const fn = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
   fn(JSON.stringify(payload));
 }
