@@ -1,12 +1,18 @@
 import {
-  addressFromHashMode,
   addressToString,
   broadcastTransaction,
   deserializeTransaction,
-  TransactionVersion,
   txidFromData,
+  addressFromVersionHash,
 } from "@stacks/transactions";
-import { StacksMainnet, StacksNetwork, StacksTestnet } from "@stacks/network";
+import { 
+  STACKS_MAINNET, 
+  STACKS_TESTNET,
+  TransactionVersion,
+  AddressVersion,
+  AddressHashMode,
+  type StacksNetwork 
+} from "@stacks/network";
 import type { SettlementReceipt, SettlementRequest } from "@/types/x402";
 import { getHiroApiBaseUrl, normalizeTxid } from "@/lib/network";
 
@@ -24,7 +30,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function networkForRequest(network: SettlementRequest["network"]): StacksNetwork {
-  return network === "stacks:1" ? new StacksMainnet() : new StacksTestnet();
+  return network === "stacks:1" ? STACKS_MAINNET : STACKS_TESTNET;
 }
 
 function txVersionForRequest(network: SettlementRequest["network"]): TransactionVersion {
@@ -107,26 +113,38 @@ export async function settleStacksPayment(
 
   const transaction = deserializeTransaction(signedTransactionHex);
   const expectedVersion = txVersionForRequest(request.network);
-  if (transaction.version !== expectedVersion) {
+  if (transaction.transactionVersion !== expectedVersion) {
     throw new Error(
-      `Signed transaction version mismatch: expected ${expectedVersion}, received ${transaction.version}`
+      `Signed transaction version mismatch: expected ${expectedVersion}, received ${transaction.transactionVersion}`
     );
   }
 
   const txid = normalizeTxid(txidFromData(Buffer.from(signedTransactionHex, "hex")));
   const spendingCondition = transaction.auth.spendingCondition;
+  
+  let addressVersion: AddressVersion;
+  if (transaction.transactionVersion === TransactionVersion.Mainnet) {
+    addressVersion =
+      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
+      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+        ? AddressVersion.MainnetSingleSig
+        : AddressVersion.MainnetMultiSig;
+  } else {
+    addressVersion =
+      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
+      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+        ? AddressVersion.TestnetSingleSig
+        : AddressVersion.TestnetMultiSig;
+  }
+
   const payer = addressToString(
-    addressFromHashMode(
-      spendingCondition.hashMode,
-      transaction.version,
-      spendingCondition.signer
-    )
+    addressFromVersionHash(addressVersion, spendingCondition.signer)
   );
 
   const network = networkForRequest(request.network);
 
   try {
-    const broadcastResult = await broadcastTransaction(transaction, network);
+    const broadcastResult = await broadcastTransaction({ transaction, network });
 
     if ("error" in broadcastResult) {
       const message = [broadcastResult.error, broadcastResult.reason]
