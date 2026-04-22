@@ -1,10 +1,9 @@
 import { createHash } from "crypto";
 import { hashMessage, verifyMessageSignatureRsv } from "@stacks/encryption";
+import { type TransactionVersion } from "@stacks/network";
 import {
-  createMessageSignature,
   getAddressFromPublicKey,
   publicKeyFromSignatureRsv,
-  type TransactionVersion,
 } from "@stacks/transactions";
 
 const HEX_RE = /^[0-9a-f]+$/i;
@@ -99,7 +98,7 @@ export function verifyWalletSignature(params: {
   const messageHashHex = Buffer.from(hashMessage(params.message)).toString("hex");
   const publicKey = publicKeyFromSignatureRsv(
     messageHashHex,
-    createMessageSignature(signature)
+    signature
   );
 
   const isValid = verifyMessageSignatureRsv({
