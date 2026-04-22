@@ -1,6 +1,5 @@
-import { StacksMainnet, StacksTestnet } from "@stacks/network";
+import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
 import {
-  AnchorMode,
   PostConditionMode,
   broadcastTransaction,
   getAddressFromPrivateKey,
@@ -23,7 +22,7 @@ function getBearerToken(request: Request): string {
 }
 
 function getNetworkClient(networkName: "mainnet" | "testnet") {
-  return networkName === "mainnet" ? new StacksMainnet() : new StacksTestnet();
+  return networkName === "mainnet" ? STACKS_MAINNET : STACKS_TESTNET;
 }
 
 async function handler(request: Request): Promise<Response> {
@@ -67,12 +66,11 @@ async function handler(request: Request): Promise<Response> {
       functionArgs: [],
       senderKey: refresherPrivateKey,
       network,
-      anchorMode: AnchorMode.Any,
       postConditionMode: PostConditionMode.Deny,
     });
 
     const txid = normalizeTxid(transaction.txid());
-    const broadcastResult = await broadcastTransaction(transaction, network);
+    const broadcastResult = await broadcastTransaction({ transaction, network });
 
     if ("error" in broadcastResult) {
       const message = [broadcastResult.error, broadcastResult.reason]
