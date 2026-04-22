@@ -1,4 +1,4 @@
-import { TransactionVersion } from "@stacks/transactions";
+import { TransactionVersion } from "@stacks/network";
 import {
   DEFAULT_SBTC_CONTRACT,
   DEFAULT_USDCX_CONTRACT,
