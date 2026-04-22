@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  type Address,
-  addressFromHashMode,
+  type AddressWire,
   addressToString,
+  addressFromVersionHash,
   ClarityType,
   deserializeTransaction,
   PayloadType,
   txidFromData,
 } from "@stacks/transactions";
+import { 
+  TransactionVersion,
+  AddressVersion,
+  AddressHashMode
+} from "@stacks/network";
 import {
   findActiveVaultById,
   incrementVaultCounters,
@@ -81,8 +86,24 @@ function validateBorrowAndPayTransaction(params: {
   const stacksConfig = getServerStacksConfig();
   const tx = deserializeTransaction(params.signedTransactionHex);
   const spendingCondition = tx.auth.spendingCondition;
+
+  let addressVersion: AddressVersion;
+  if (tx.transactionVersion === TransactionVersion.Mainnet) {
+    addressVersion =
+      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
+      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+        ? AddressVersion.MainnetSingleSig
+        : AddressVersion.MainnetMultiSig;
+  } else {
+    addressVersion =
+      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
+      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+        ? AddressVersion.TestnetSingleSig
+        : AddressVersion.TestnetMultiSig;
+  }
+
   const payerAddress = addressToString(
-    addressFromHashMode(spendingCondition.hashMode, tx.version, spendingCondition.signer)
+    addressFromVersionHash(addressVersion, spendingCondition.signer)
   );
   const txid = normalizeTxid(txidFromData(Buffer.from(params.signedTransactionHex, "hex")));
   const payload = tx.payload;
@@ -122,7 +143,7 @@ function validateBorrowAndPayTransaction(params: {
     throw new Error("Signed transaction merchant is not a standard principal");
   }
 
-  if (addressToString(merchantArg.address as Address) !== params.providerAddress) {
+  if (addressToString(merchantArg.address as AddressWire) !== params.providerAddress) {
     throw new Error("Signed transaction merchant does not match the vault provider");
   }
 
