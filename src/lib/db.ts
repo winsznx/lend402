@@ -33,7 +33,7 @@ function asNumber(value: unknown): number {
 }
 
 function asNullableNumber(value: unknown): number | null {
-  return value == null ? null : asNumber(value);
+  return value === null || value === undefined ? null : asNumber(value);
 }
 
 function asString(value: unknown): string {
@@ -44,7 +44,7 @@ function asString(value: unknown): string {
 }
 
 function asNullableString(value: unknown): string | null {
-  return value == null ? null : asString(value);
+  return value === null || value === undefined ? null : asString(value);
 }
 
 function asBoolean(value: unknown): boolean {
@@ -54,7 +54,7 @@ function asBoolean(value: unknown): boolean {
 }
 
 function asJson<T>(value: unknown): T | null {
-  if (value == null) return null;
+  if (value === null || value === undefined) return null;
   if (typeof value === "string") {
     return JSON.parse(value) as T;
   }
@@ -95,7 +95,7 @@ function toCallRecord(row: PgRow): CallRecord {
     settled_at: asString(row.settled_at),
     x402_payload: asJson<XPaymentHeader>(row.x402_payload),
     webhook_delivered:
-      row.webhook_delivered == null ? null : asBoolean(row.webhook_delivered),
+      row.webhook_delivered === null || row.webhook_delivered === undefined ? null : asBoolean(row.webhook_delivered),
   };
 }
 
