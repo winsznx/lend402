@@ -125,14 +125,14 @@ export async function settleStacksPayment(
   let addressVersion: AddressVersion;
   if (transaction.transactionVersion === TransactionVersion.Mainnet) {
     addressVersion =
-      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
-      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+      spendingCondition.hashMode === AddressHashMode.P2PKH ||
+      spendingCondition.hashMode === AddressHashMode.P2WPKH
         ? AddressVersion.MainnetSingleSig
         : AddressVersion.MainnetMultiSig;
   } else {
     addressVersion =
-      spendingCondition.hashMode === AddressHashMode.SerializeP2PKH ||
-      spendingCondition.hashMode === AddressHashMode.SerializeP2WPKH
+      spendingCondition.hashMode === AddressHashMode.P2PKH ||
+      spendingCondition.hashMode === AddressHashMode.P2WPKH
         ? AddressVersion.TestnetSingleSig
         : AddressVersion.TestnetMultiSig;
   }
