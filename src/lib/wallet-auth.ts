@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { hashMessage, verifyMessageSignatureRsv } from "@stacks/encryption";
-import { type TransactionVersion } from "@stacks/network";
+import { TransactionVersion } from "@stacks/network";
 import {
   getAddressFromPublicKey,
   publicKeyFromSignatureRsv,
