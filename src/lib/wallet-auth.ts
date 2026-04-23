@@ -113,7 +113,7 @@ export function verifyWalletSignature(params: {
 
   const derivedAddress = getAddressFromPublicKey(
     publicKey,
-    params.transactionVersion
+    params.transactionVersion === TransactionVersion.Mainnet ? "mainnet" : "testnet"
   );
 
   if (derivedAddress !== params.address) {
