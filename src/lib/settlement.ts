@@ -3,6 +3,7 @@ import {
   broadcastTransaction,
   deserializeTransaction,
   txidFromData,
+  AddressHashMode,
   addressFromVersionHash,
 } from "@stacks/transactions";
 import { 
@@ -10,7 +11,6 @@ import {
   STACKS_TESTNET,
   TransactionVersion,
   AddressVersion,
-  AddressHashMode,
   type StacksNetwork 
 } from "@stacks/network";
 import type { SettlementReceipt, SettlementRequest } from "@/types/x402";
