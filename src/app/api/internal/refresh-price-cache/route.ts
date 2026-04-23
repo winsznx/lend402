@@ -55,7 +55,7 @@ async function handler(request: Request): Promise<Response> {
   const network = getNetworkClient(stacksConfig.networkName);
   const senderAddress = getAddressFromPrivateKey(
     refresherPrivateKey,
-    stacksConfig.transactionVersion
+    stacksConfig.networkName
   );
 
   try {
