@@ -7,11 +7,11 @@ import {
   deserializeTransaction,
   PayloadType,
   txidFromData,
+  AddressHashMode,
 } from "@stacks/transactions";
 import { 
   TransactionVersion,
-  AddressVersion,
-  AddressHashMode
+  AddressVersion
 } from "@stacks/network";
 import {
   findActiveVaultById,
