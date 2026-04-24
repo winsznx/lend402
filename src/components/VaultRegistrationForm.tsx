@@ -7,13 +7,13 @@ import Button from "@/components/ui/Button";
 import { buildClientVaultRegistrationMessage } from "@/lib/client-messages";
 
 interface Props {
-  walletAddress: string | null;
+  readonly walletAddress: string | null;
 }
 
 interface RegistrationResult {
-  vaultId: string;
-  wrappedUrl: string;
-  createdAt: string;
+  readonly vaultId: string;
+  readonly wrappedUrl: string;
+  readonly createdAt: string;
 }
 
 export default function VaultRegistrationForm({ walletAddress }: Props) {
