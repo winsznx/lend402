@@ -4,11 +4,11 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useScrollLock } from "@/hooks/useScrollLock";
 
 interface DialogProps {
-  open: boolean;
-  onClose: () => void;
-  title?: string;
-  children: ReactNode;
-  className?: string;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly title?: string;
+  readonly children: ReactNode;
+  readonly className?: string;
 }
 
 export default function Dialog({ open, onClose, title, children, className = "" }: DialogProps) {
