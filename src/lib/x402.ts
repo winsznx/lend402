@@ -24,12 +24,12 @@ export const PAYMENT_SIGNATURE_HEADER = X402_HEADERS.PAYMENT_SIGNATURE;
 export const PAYMENT_RESPONSE_HEADER = X402_HEADERS.PAYMENT_RESPONSE;
 
 interface LegacyXPaymentHeader {
-  x402Version: 2;
-  scheme: "exact";
-  network: Caip2NetworkId;
-  payload: {
-    signedTransaction: string;
-    type: "contract_call";
+  readonly x402Version: 2;
+  readonly scheme: "exact";
+  readonly network: Caip2NetworkId;
+  readonly payload: {
+    readonly signedTransaction: string;
+    readonly type: "contract_call";
   };
 }
 
@@ -69,25 +69,25 @@ function getSbtcRefPriceUsd8(): number {
 }
 
 export interface Build402BodyOptions {
-  network: Caip2NetworkId;
+  readonly network: Caip2NetworkId;
   /** Price in USDCx (6 decimals, e.g. 500000 = $0.50) */
-  priceUsdcx: number;
+  readonly priceUsdcx: number;
   /** Stacks principal receiving payment */
-  payTo: string;
+  readonly payTo: string;
   /** Unique resource identifier */
-  resource: string;
+  readonly resource: string;
   /** Human-readable description */
-  description: string;
+  readonly description: string;
   /** MIME type of the gated resource */
-  mimeType?: string;
+  readonly mimeType?: string;
   /** Max seconds to pay (default: 300) */
-  maxTimeoutSeconds?: number;
+  readonly maxTimeoutSeconds?: number;
   /** Explicit USDCx asset contract override */
-  asset?: string;
+  readonly asset?: string;
   /** sBTC asset contract override (defaults to network canonical address) */
-  sbtcAsset?: string;
+  readonly sbtcAsset?: string;
   /** Extra protocol data */
-  extra?: Record<string, unknown>;
+  readonly extra?: Record<string, unknown>;
 }
 
 /** Builds the JSON body returned with HTTP 402 responses. */
@@ -166,16 +166,16 @@ export function parsePaymentRequiredHeader(encoded: string): PaymentRequiredBody
 }
 
 export interface BuildPaymentSignatureHeaderOptions {
-  resource: PaymentRequiredBody["resource"];
-  accepted: PaymentOption;
-  signedTransactionHex: string;
+  readonly resource: PaymentRequiredBody["resource"];
+  readonly accepted: PaymentOption;
+  readonly signedTransactionHex: string;
   /**
    * x402 V2 `payment-identifier` extension.
    * Set to the Stacks txid (0x-prefixed) computed from the signed transaction.
    * The gateway cross-checks this against the txid it derives independently
    * from deserializing the transaction, providing an early integrity signal.
    */
-  paymentIdentifier?: string;
+  readonly paymentIdentifier?: string;
 }
 
 /** Builds the base64-encoded value of the payment-signature request header. */
@@ -240,11 +240,11 @@ export function parseLegacyXPaymentHeader(
 }
 
 export interface BuildPaymentResponseOptions {
-  txid: string;
-  network: Caip2NetworkId;
-  payer: string;
-  blockHeight: number;
-  confirmedAt: number;
+  readonly txid: string;
+  readonly network: Caip2NetworkId;
+  readonly payer: string;
+  readonly blockHeight: number;
+  readonly confirmedAt: number;
 }
 
 /** Builds the base64-encoded value of the payment-response response header. */
