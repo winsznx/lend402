@@ -2,12 +2,12 @@ import { updateCallWebhookDelivered } from "@/lib/db";
 import { isAllowedUrl } from "@/lib/ssrf";
 
 interface CallSettledWebhookPayload {
-  event: "call.settled";
-  vaultId: string;
-  txid: string;
-  payer: string;
-  amountUsdcx: number;
-  timestamp: string;
+  readonly event: "call.settled";
+  readonly vaultId: string;
+  readonly txid: string;
+  readonly payer: string;
+  readonly amountUsdcx: number;
+  readonly timestamp: string;
 }
 
 async function sleep(ms: number): Promise<void> {
