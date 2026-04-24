@@ -1,7 +1,7 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 
 interface CheckboxProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
+  readonly label?: string;
 }
 
 const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
