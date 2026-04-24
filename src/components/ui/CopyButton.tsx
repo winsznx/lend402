@@ -3,9 +3,9 @@
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 
 interface CopyButtonProps {
-  text: string;
-  className?: string;
-  label?: string;
+  readonly text: string;
+  readonly className?: string;
+  readonly label?: string;
 }
 
 export default function CopyButton({ text, className = "", label = "Copy" }: CopyButtonProps) {
