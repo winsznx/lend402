@@ -1,7 +1,7 @@
 interface RetryOptions {
-  maxAttempts: number;
-  baseDelayMs: number;
-  maxDelayMs?: number;
+  readonly maxAttempts: number;
+  readonly baseDelayMs: number;
+  readonly maxDelayMs?: number;
 }
 
 export async function withRetry<T>(
