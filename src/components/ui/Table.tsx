@@ -1,17 +1,17 @@
 import type { ReactNode } from "react";
 
 interface Column<T> {
-  key: string;
-  header: string;
-  render: (row: T) => ReactNode;
-  className?: string;
+  readonly key: string;
+  readonly header: string;
+  readonly render: (row: T) => ReactNode;
+  readonly className?: string;
 }
 
 interface TableProps<T> {
-  columns: Array<Column<T>>;
-  rows: T[];
-  emptyMessage?: string;
-  className?: string;
+  readonly columns: Array<Column<T>>;
+  readonly rows: T[];
+  readonly emptyMessage?: string;
+  readonly className?: string;
 }
 
 export default function Table<T>({ columns, rows, emptyMessage = "No data", className = "" }: TableProps<T>) {
