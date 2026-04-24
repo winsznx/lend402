@@ -3,9 +3,9 @@
 import CopyButton from "@/components/ui/CopyButton";
 
 interface CodeBlockProps {
-  code: string;
-  language?: string;
-  className?: string;
+  readonly code: string;
+  readonly language?: string;
+  readonly className?: string;
 }
 
 export default function CodeBlock({ code, language, className = "" }: CodeBlockProps) {
