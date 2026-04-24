@@ -7,116 +7,116 @@ type Json =
   | Json[];
 
 export type Database = {
-  public: {
-    Tables: {
-      vaults: {
-        Row: {
-          vault_id: string;
-          provider_address: string;
-          origin_url: string;
-          price_usdcx: number;
-          rate_limit: number;
-          resource_name: string;
-          description: string | null;
-          webhook_url: string | null;
-          network: "stacks:1" | "stacks:2147483648";
-          asset_contract: string;
-          is_active: boolean;
-          created_at: string;
-          updated_at: string;
-          total_calls: number;
-          total_earned_usdcx: number;
+  readonly public: {
+    readonly Tables: {
+      readonly vaults: {
+        readonly Row: {
+          readonly vault_id: string;
+          readonly provider_address: string;
+          readonly origin_url: string;
+          readonly price_usdcx: number;
+          readonly rate_limit: number;
+          readonly resource_name: string;
+          readonly description: string | null;
+          readonly webhook_url: string | null;
+          readonly network: "stacks:1" | "stacks:2147483648";
+          readonly asset_contract: string;
+          readonly is_active: boolean;
+          readonly created_at: string;
+          readonly updated_at: string;
+          readonly total_calls: number;
+          readonly total_earned_usdcx: number;
         };
-        Insert: {
-          vault_id?: string;
-          provider_address: string;
-          origin_url: string;
-          price_usdcx: number;
-          rate_limit?: number;
-          resource_name: string;
-          description?: string | null;
-          webhook_url?: string | null;
-          network?: "stacks:1" | "stacks:2147483648";
-          asset_contract?: string;
-          is_active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-          total_calls?: number;
-          total_earned_usdcx?: number;
+        readonly Insert: {
+          readonly vault_id?: string;
+          readonly provider_address: string;
+          readonly origin_url: string;
+          readonly price_usdcx: number;
+          readonly rate_limit?: number;
+          readonly resource_name: string;
+          readonly description?: string | null;
+          readonly webhook_url?: string | null;
+          readonly network?: "stacks:1" | "stacks:2147483648";
+          readonly asset_contract?: string;
+          readonly is_active?: boolean;
+          readonly created_at?: string;
+          readonly updated_at?: string;
+          readonly total_calls?: number;
+          readonly total_earned_usdcx?: number;
         };
-        Update: {
-          provider_address?: string;
-          origin_url?: string;
-          price_usdcx?: number;
-          rate_limit?: number;
-          resource_name?: string;
-          description?: string | null;
-          webhook_url?: string | null;
-          network?: "stacks:1" | "stacks:2147483648";
-          asset_contract?: string;
-          is_active?: boolean;
-          updated_at?: string;
-          total_calls?: number;
-          total_earned_usdcx?: number;
+        readonly Update: {
+          readonly provider_address?: string;
+          readonly origin_url?: string;
+          readonly price_usdcx?: number;
+          readonly rate_limit?: number;
+          readonly resource_name?: string;
+          readonly description?: string | null;
+          readonly webhook_url?: string | null;
+          readonly network?: "stacks:1" | "stacks:2147483648";
+          readonly asset_contract?: string;
+          readonly is_active?: boolean;
+          readonly updated_at?: string;
+          readonly total_calls?: number;
+          readonly total_earned_usdcx?: number;
         };
-        Relationships: [];
+        readonly Relationships: [];
       };
-      calls: {
-        Row: {
-          call_id: string;
-          vault_id: string;
-          payer_address: string;
-          txid: string;
-          block_height: number | null;
-          amount_usdcx: number;
-          path: string;
-          method: string;
-          origin_status: number | null;
-          settled_at: string;
-          x402_payload: Json | null;
-          webhook_delivered: boolean | null;
+      readonly calls: {
+        readonly Row: {
+          readonly call_id: string;
+          readonly vault_id: string;
+          readonly payer_address: string;
+          readonly txid: string;
+          readonly block_height: number | null;
+          readonly amount_usdcx: number;
+          readonly path: string;
+          readonly method: string;
+          readonly origin_status: number | null;
+          readonly settled_at: string;
+          readonly x402_payload: Json | null;
+          readonly webhook_delivered: boolean | null;
         };
-        Insert: {
-          call_id?: string;
-          vault_id: string;
-          payer_address: string;
-          txid: string;
-          block_height?: number | null;
-          amount_usdcx: number;
-          path: string;
-          method: string;
-          origin_status?: number | null;
-          settled_at?: string;
-          x402_payload?: Json | null;
-          webhook_delivered?: boolean | null;
+        readonly Insert: {
+          readonly call_id?: string;
+          readonly vault_id: string;
+          readonly payer_address: string;
+          readonly txid: string;
+          readonly block_height?: number | null;
+          readonly amount_usdcx: number;
+          readonly path: string;
+          readonly method: string;
+          readonly origin_status?: number | null;
+          readonly settled_at?: string;
+          readonly x402_payload?: Json | null;
+          readonly webhook_delivered?: boolean | null;
         };
-        Update: {
-          payer_address?: string;
-          txid?: string;
-          block_height?: number | null;
-          amount_usdcx?: number;
-          path?: string;
-          method?: string;
-          origin_status?: number | null;
-          settled_at?: string;
-          x402_payload?: Json | null;
-          webhook_delivered?: boolean | null;
+        readonly Update: {
+          readonly payer_address?: string;
+          readonly txid?: string;
+          readonly block_height?: number | null;
+          readonly amount_usdcx?: number;
+          readonly path?: string;
+          readonly method?: string;
+          readonly origin_status?: number | null;
+          readonly settled_at?: string;
+          readonly x402_payload?: Json | null;
+          readonly webhook_delivered?: boolean | null;
         };
-        Relationships: [];
-      };
-    };
-    Views: { [_ in never]: never };
-    Functions: {
-      increment_vault_counters: {
-        Args: {
-          p_vault_id: string;
-          p_amount_usdcx: number;
-        };
-        Returns: undefined;
+        readonly Relationships: [];
       };
     };
-    Enums: { [_ in never]: never };
-    CompositeTypes: { [_ in never]: never };
+    readonly Views: { [_ in never]: never };
+    readonly Functions: {
+      readonly increment_vault_counters: {
+        readonly Args: {
+          readonly p_vault_id: string;
+          readonly p_amount_usdcx: number;
+        };
+        readonly Returns: undefined;
+      };
+    };
+    readonly Enums: { [_ in never]: never };
+    readonly CompositeTypes: { [_ in never]: never };
   };
 };
 
@@ -124,12 +124,12 @@ export type VaultRow = Database["public"]["Tables"]["vaults"]["Row"];
 export type CallRow = Database["public"]["Tables"]["calls"]["Row"];
 
 export interface DashboardCallRow extends CallRow {
-  txidDisplay: string;
-  explorerUrl: string;
-  status: "success" | "origin_error";
+  readonly txidDisplay: string;
+  readonly explorerUrl: string;
+  readonly status: "success" | "origin_error";
 }
 
 export interface VaultWithRecentCalls extends VaultRow {
-  wrappedUrl: string;
-  recentCalls: DashboardCallRow[];
+  readonly wrappedUrl: string;
+  readonly recentCalls: DashboardCallRow[];
 }
