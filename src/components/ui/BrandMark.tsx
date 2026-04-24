@@ -1,8 +1,8 @@
 import Image from "next/image";
 
 interface BrandMarkProps {
-  size?: number;
-  className?: string;
+  readonly size?: number;
+  readonly className?: string;
 }
 
 export default function BrandMark({
