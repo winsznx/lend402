@@ -1,6 +1,6 @@
 interface SpinnerProps {
-  size?: "sm" | "md" | "lg";
-  className?: string;
+  readonly size?: "sm" | "md" | "lg";
+  readonly className?: string;
 }
 
 const SIZE_MAP = { sm: "w-3.5 h-3.5", md: "w-5 h-5", lg: "w-8 h-8" } as const;
