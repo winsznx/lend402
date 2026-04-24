@@ -9,13 +9,13 @@
 import React from "react";
 
 interface ChipProps {
-  label: string;
-  value: string;
+  readonly label: string;
+  readonly value: string;
   /** Accent hex color for the value text */
-  color: string;
+  readonly color: string;
   /** If true, shows a pulsing dot before the label */
-  live?: boolean;
-  className?: string;
+  readonly live?: boolean;
+  readonly className?: string;
 }
 
 export function Chip({ label, value, color, live, className = "" }: ChipProps) {
@@ -44,10 +44,10 @@ export function Chip({ label, value, color, live, className = "" }: ChipProps) {
 
 // Bordered pill variant for richer context
 interface PillProps {
-  label: string;
-  color: string;
-  live?: boolean;
-  className?: string;
+  readonly label: string;
+  readonly color: string;
+  readonly live?: boolean;
+  readonly className?: string;
 }
 
 export function Pill({ label, color, live, className = "" }: PillProps) {
