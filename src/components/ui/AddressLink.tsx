@@ -5,9 +5,9 @@ import { buildExplorerAddressUrl } from "@/lib/url";
 import { PUBLIC_HIRO_EXPLORER_BASE_URL, PUBLIC_STACKS_NETWORK } from "@/lib/public-config";
 
 interface AddressLinkProps {
-  address: string;
-  truncate?: boolean;
-  className?: string;
+  readonly address: string;
+  readonly truncate?: boolean;
+  readonly className?: string;
 }
 
 export default function AddressLink({ address, truncate = true, className = "" }: AddressLinkProps) {
