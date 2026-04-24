@@ -46,7 +46,7 @@ const PROXY_TIMEOUT_MS = 30_000;
 const CHALLENGE_RATE_LIMIT = 120;
 
 interface RouteParams {
-  params: Promise<{ vault_id: string; path?: string[] }>;
+  readonly params: Promise<{ vault_id: string; path?: string[] }>;
 }
 
 function jsonError(error: string, status: number, extra?: Record<string, unknown>) {
