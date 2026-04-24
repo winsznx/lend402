@@ -3,7 +3,7 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 
 interface SearchInputProps extends InputHTMLAttributes<HTMLInputElement> {
-  onClear?: () => void;
+  readonly onClear?: () => void;
 }
 
 const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
