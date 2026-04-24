@@ -1,8 +1,8 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
-  error?: string;
+  readonly label?: string;
+  readonly error?: string;
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
