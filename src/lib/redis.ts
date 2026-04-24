@@ -36,9 +36,9 @@ export function getRedis(): Redis {
 const SETTLED_KEY_TTL = 86_400; // 24 hours in seconds
 
 export interface SettledRecord {
-  blockHeight: number;
-  confirmedAt: number;
-  payer: string;
+  readonly blockHeight: number;
+  readonly confirmedAt: number;
+  readonly payer: string;
 }
 
 /** Mark a txid as settled so duplicate settle calls are rejected. */
