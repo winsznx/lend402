@@ -3,15 +3,15 @@
 import { useState, type ReactNode } from "react";
 
 interface Tab {
-  id: string;
-  label: string;
-  content: ReactNode;
+  readonly id: string;
+  readonly label: string;
+  readonly content: ReactNode;
 }
 
 interface TabsProps {
-  tabs: Tab[];
-  defaultTab?: string;
-  className?: string;
+  readonly tabs: Tab[];
+  readonly defaultTab?: string;
+  readonly className?: string;
 }
 
 export default function Tabs({ tabs, defaultTab, className = "" }: TabsProps) {
