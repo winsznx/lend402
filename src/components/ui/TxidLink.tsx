@@ -4,9 +4,9 @@ import { truncateMiddle } from "@/lib/format";
 import { getExplorerTxUrl } from "@/lib/public-config";
 
 interface TxidLinkProps {
-  txid: string;
-  className?: string;
-  maxLen?: number;
+  readonly txid: string;
+  readonly className?: string;
+  readonly maxLen?: number;
 }
 
 export default function TxidLink({ txid, className = "", maxLen = 14 }: TxidLinkProps) {
