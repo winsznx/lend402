@@ -97,10 +97,10 @@ const apiEndpoints = [
 type MessageType = "req" | "res-402" | "res-200" | "internal" | "note";
 
 interface Message {
-  type: MessageType;
-  from?: string;
-  to?: string;
-  label: string;
+  readonly type: MessageType;
+  readonly from?: string;
+  readonly to?: string;
+  readonly label: string;
 }
 
 const PARTICIPANTS: Record<string, { label: string; color: string }> = {
