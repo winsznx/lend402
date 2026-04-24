@@ -10,13 +10,13 @@
 import React from "react";
 
 interface GlassCardProps {
-  children: React.ReactNode;
-  className?: string;
+  readonly children: React.ReactNode;
+  readonly className?: string;
   /** Optional accent glow. Pass a hex/rgba color to add a tinted inner ring. */
-  accentColor?: string;
+  readonly accentColor?: string;
   /** If true, renders without rounded corners (e.g. for full-bleed sections). */
-  flush?: boolean;
-  as?: React.ElementType;
+  readonly flush?: boolean;
+  readonly as?: React.ElementType;
 }
 
 export default function GlassCard({
