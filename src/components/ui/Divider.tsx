@@ -1,6 +1,6 @@
 interface DividerProps {
-  className?: string;
-  label?: string;
+  readonly className?: string;
+  readonly label?: string;
 }
 
 export default function Divider({ className = "", label }: DividerProps) {
