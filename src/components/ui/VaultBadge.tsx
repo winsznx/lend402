@@ -1,8 +1,8 @@
 import Badge from "./Badge";
 
 interface VaultBadgeProps {
-  active: boolean;
-  className?: string;
+  readonly active: boolean;
+  readonly className?: string;
 }
 
 export default function VaultBadge({ active, className = "" }: VaultBadgeProps) {
