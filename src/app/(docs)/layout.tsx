@@ -66,10 +66,10 @@ const IconClose = (
 // ---------------------------------------------------------------------------
 
 interface NavItemProps {
-  id: string;
-  label: string;
-  distinct?: boolean;
-  isActive: boolean;
+  readonly id: string;
+  readonly label: string;
+  readonly distinct?: boolean;
+  readonly isActive: boolean;
 }
 
 function NavItem({ id, label, distinct = false, isActive }: NavItemProps) {
