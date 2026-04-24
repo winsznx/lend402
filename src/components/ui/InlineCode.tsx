@@ -1,6 +1,6 @@
 interface InlineCodeProps {
-  children: React.ReactNode;
-  className?: string;
+  readonly children: React.ReactNode;
+  readonly className?: string;
 }
 
 export default function InlineCode({ children, className = "" }: InlineCodeProps) {
