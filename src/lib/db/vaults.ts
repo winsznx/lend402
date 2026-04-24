@@ -3,10 +3,10 @@ import { getDb, PgRow } from "./core";
 import { toVaultRecord, asString, asNullableString, asNumber, asBoolean } from "./parsers";
 
 type VaultDashboardUpdate = {
-  price_usdcx?: number;
-  rate_limit?: number;
-  description?: string | null;
-  webhook_url?: string | null;
+  readonly price_usdcx?: number;
+  readonly rate_limit?: number;
+  readonly description?: string | null;
+  readonly webhook_url?: string | null;
 };
 
 export async function findVaultRegistrationDuplicate(
