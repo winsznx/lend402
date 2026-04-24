@@ -3,9 +3,9 @@
 import { useState, type ReactNode } from "react";
 
 interface TooltipProps {
-  content: string;
-  children: ReactNode;
-  className?: string;
+  readonly content: string;
+  readonly children: ReactNode;
+  readonly className?: string;
 }
 
 export default function Tooltip({ content, children, className = "" }: TooltipProps) {
