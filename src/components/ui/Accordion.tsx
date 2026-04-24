@@ -3,10 +3,10 @@
 import { useState, type ReactNode } from "react";
 
 interface AccordionProps {
-  title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-  className?: string;
+  readonly title: string;
+  readonly children: ReactNode;
+  readonly defaultOpen?: boolean;
+  readonly className?: string;
 }
 
 export default function Accordion({ title, children, defaultOpen = false, className = "" }: AccordionProps) {
