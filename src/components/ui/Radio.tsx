@@ -1,7 +1,7 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 
 interface RadioProps extends InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
+  readonly label?: string;
 }
 
 const Radio = forwardRef<HTMLInputElement, RadioProps>(
