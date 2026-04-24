@@ -56,11 +56,11 @@ function SectionHeader({ label }: { label: string }) {
 // ---------------------------------------------------------------------------
 
 interface BalanceTileProps {
-  asset: "sBTC" | "USDCx";
-  amount: string;
-  subtext: string;
-  accentColor: string;
-  badge?: "LOCKED" | "JIT" | null;
+  readonly asset: "sBTC" | "USDCx";
+  readonly amount: string;
+  readonly subtext: string;
+  readonly accentColor: string;
+  readonly badge?: "LOCKED" | "JIT" | null;
 }
 
 function BalanceTile({ asset, amount, subtext, accentColor, badge }: BalanceTileProps) {
