@@ -6,9 +6,9 @@ import {
 } from "@/lib/wallet-auth";
 
 export interface DashboardAuthContext {
-  address: string;
-  message: string;
-  signature: string;
+  readonly address: string;
+  readonly message: string;
+  readonly signature: string;
 }
 
 export function readDashboardAuth(
