@@ -1,8 +1,8 @@
 interface AlertProps {
-  variant?: "info" | "success" | "warning" | "error";
-  title?: string;
-  children: React.ReactNode;
-  className?: string;
+  readonly variant?: "info" | "success" | "warning" | "error";
+  readonly title?: string;
+  readonly children: React.ReactNode;
+  readonly className?: string;
 }
 
 const VARIANT_CLASSES: Record<NonNullable<AlertProps["variant"]>, string> = {
