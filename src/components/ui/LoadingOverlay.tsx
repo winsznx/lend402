@@ -3,9 +3,9 @@
 import Spinner from "./Spinner";
 
 interface LoadingOverlayProps {
-  visible: boolean;
-  message?: string;
-  className?: string;
+  readonly visible: boolean;
+  readonly message?: string;
+  readonly className?: string;
 }
 
 export default function LoadingOverlay({ visible, message, className = "" }: LoadingOverlayProps) {
