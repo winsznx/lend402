@@ -1,8 +1,8 @@
 import { forwardRef, type TextareaHTMLAttributes } from "react";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
-  label?: string;
-  error?: string;
+  readonly label?: string;
+  readonly error?: string;
 }
 
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
