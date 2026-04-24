@@ -6,7 +6,7 @@ import Button from "@/components/ui/Button";
 import { PUBLIC_GATEWAY_BASE_URL } from "@/lib/public-config";
 
 interface Props {
-  onTrigger?: (targetUrl: string) => void;
+  readonly onTrigger?: (targetUrl: string) => void;
 }
 
 function resolveVaultUrl(input: string, path: string): string {
