@@ -1,11 +1,11 @@
 "use client";
 
 interface ToggleProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label?: string;
-  disabled?: boolean;
-  className?: string;
+  readonly checked: boolean;
+  readonly onChange: (checked: boolean) => void;
+  readonly label?: string;
+  readonly disabled?: boolean;
+  readonly className?: string;
 }
 
 export default function Toggle({ checked, onChange, label, disabled, className = "" }: ToggleProps) {
