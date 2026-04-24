@@ -1,7 +1,7 @@
 interface BadgeProps {
-  children: React.ReactNode;
-  variant?: "default" | "success" | "warning" | "error" | "info";
-  className?: string;
+  readonly children: React.ReactNode;
+  readonly variant?: "default" | "success" | "warning" | "error" | "info";
+  readonly className?: string;
 }
 
 const VARIANT_CLASSES: Record<NonNullable<BadgeProps["variant"]>, string> = {
