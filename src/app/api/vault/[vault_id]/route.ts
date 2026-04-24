@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface RouteParams {
-  params: Promise<{ vault_id: string }>;
+  readonly params: Promise<{ vault_id: string }>;
 }
 
 function jsonError(error: string, status: number): NextResponse {
