@@ -20,9 +20,9 @@ const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 60_000;
 
 interface TxStatusResponse {
-  tx_status: string;
-  block_height: number;
-  burn_block_time: number;
+  readonly tx_status: string;
+  readonly block_height: number;
+  readonly burn_block_time: number;
 }
 
 function sleep(ms: number): Promise<void> {
