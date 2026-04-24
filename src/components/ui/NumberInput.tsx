@@ -1,10 +1,10 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 
 interface NumberInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
-  label?: string;
-  error?: string;
-  prefix?: string;
-  suffix?: string;
+  readonly label?: string;
+  readonly error?: string;
+  readonly prefix?: string;
+  readonly suffix?: string;
 }
 
 const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
