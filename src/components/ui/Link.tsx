@@ -2,7 +2,7 @@ import NextLink from "next/link";
 import type { ComponentProps } from "react";
 
 interface LinkProps extends ComponentProps<typeof NextLink> {
-  external?: boolean;
+  readonly external?: boolean;
 }
 
 export default function Link({ external, className = "", children, ...rest }: LinkProps) {
