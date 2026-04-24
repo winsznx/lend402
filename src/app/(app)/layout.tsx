@@ -147,12 +147,12 @@ const IconMoon = (
 // ---------------------------------------------------------------------------
 
 interface NavItemProps {
-  icon: React.ReactNode;
-  label: string;
-  href: string;
-  external?: boolean;
-  collapsed: boolean;
-  isActive: boolean;
+  readonly icon: React.ReactNode;
+  readonly label: string;
+  readonly href: string;
+  readonly external?: boolean;
+  readonly collapsed: boolean;
+  readonly isActive: boolean;
 }
 
 function NavItem({ icon, label, href, external = false, collapsed, isActive }: NavItemProps) {
@@ -198,8 +198,8 @@ function NavItem({ icon, label, href, external = false, collapsed, isActive }: N
 // ---------------------------------------------------------------------------
 
 interface SidebarSectionProps {
-  label: string;
-  collapsed: boolean;
+  readonly label: string;
+  readonly collapsed: boolean;
 }
 
 function SidebarSection({ label, collapsed }: SidebarSectionProps) {
@@ -216,9 +216,9 @@ function SidebarSection({ label, collapsed }: SidebarSectionProps) {
 // ---------------------------------------------------------------------------
 
 interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-  className?: string;
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
+  readonly className?: string;
 }
 
 function Sidebar({ collapsed, onToggle, className = "" }: SidebarProps) {
@@ -337,7 +337,7 @@ function Sidebar({ collapsed, onToggle, className = "" }: SidebarProps) {
 // ---------------------------------------------------------------------------
 
 interface TopBarProps {
-  onMobileToggle: () => void;
+  readonly onMobileToggle: () => void;
 }
 
 function TopBar({ onMobileToggle }: TopBarProps) {
