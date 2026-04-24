@@ -48,52 +48,52 @@ export type AgentEventType =
   | "ERROR";
 
 export interface AgentEvent {
-  type: AgentEventType;
-  timestamp: number;
-  data: Record<string, unknown>;
+  readonly type: AgentEventType;
+  readonly timestamp: number;
+  readonly data: Record<string, unknown>;
 }
 
 export interface TerminalLine {
-  id: string;
-  timestamp: number;
-  level: "info" | "warn" | "success" | "error" | "system" | "confirm";
-  text: string;
-  data?: Record<string, unknown>;
+  readonly id: string;
+  readonly timestamp: number;
+  readonly level: "info" | "warn" | "success" | "error" | "system" | "confirm";
+  readonly text: string;
+  readonly data?: Record<string, unknown>;
 }
 
 export interface LoanPosition {
-  loanId: string;
-  principalUsdcx: number;    // 6 decimals (e.g. 500000 = $0.50)
-  collateralSbtc: number;    // 8 decimals (satoshis)
-  originationTime: number;   // unix ms
-  txid: string;
-  blockHeight: number;
-  merchantAddress: string;
-  netPaymentUsdcx: number;
-  sbtcPriceUsd: number;      // human-readable (e.g. 97842.15)
+  readonly loanId: string;
+  readonly principalUsdcx: number;    // 6 decimals (e.g. 500000 = $0.50)
+  readonly collateralSbtc: number;    // 8 decimals (satoshis)
+  readonly originationTime: number;   // unix ms
+  readonly txid: string;
+  readonly blockHeight: number;
+  readonly merchantAddress: string;
+  readonly netPaymentUsdcx: number;
+  readonly sbtcPriceUsd: number;      // human-readable (e.g. 97842.15)
 }
 
 export interface SimulatePreview {
-  requiredCollateralSbtc: bigint;
-  originationFeeUsdcx: bigint;
-  netPaymentUsdcx: bigint;
-  sbtcPriceUsd8: bigint;
-  amountUsdcx: bigint;
+  readonly requiredCollateralSbtc: bigint;
+  readonly originationFeeUsdcx: bigint;
+  readonly netPaymentUsdcx: bigint;
+  readonly sbtcPriceUsd8: bigint;
+  readonly amountUsdcx: bigint;
 }
 
 export interface TreasuryState {
   /** sBTC balance (satoshis, 8 decimals) — starts populated, decreases as collateral is locked */
-  sbtcBalance: bigint;
+  readonly sbtcBalance: bigint;
   /** USDCx balance (6 decimals) — starts at 0, agent borrows JIT */
-  usdcxBalance: bigint;
+  readonly usdcxBalance: bigint;
   /** Active loan position, null when no debt outstanding */
-  activePosition: LoanPosition | null;
+  readonly activePosition: LoanPosition | null;
   /** Preview from simulate-borrow, shown before tx confirmation */
-  simulatePreview: SimulatePreview | null;
+  readonly simulatePreview: SimulatePreview | null;
   /** Retrieved premium data payload */
-  premiumData: Record<string, unknown> | null;
+  readonly premiumData: Record<string, unknown> | null;
   /** Both txids after the full borrow→data→repay cycle completes */
-  settlementTxids: { borrowTxid: string; repayTxid: string } | null;
+  readonly settlementTxids: { borrowTxid: string; repayTxid: string } | null;
 }
 
 export type AgentPhase =
@@ -109,13 +109,13 @@ export type AgentPhase =
   | "ERROR";
 
 export interface AgentState {
-  walletAddress: string | null;
-  isConnected: boolean;
-  isHydrated: boolean;
-  phase: AgentPhase;
-  treasury: TreasuryState;
-  terminalLines: TerminalLine[];
-  lastError: string | null;
+  readonly walletAddress: string | null;
+  readonly isConnected: boolean;
+  readonly isHydrated: boolean;
+  readonly phase: AgentPhase;
+  readonly treasury: TreasuryState;
+  readonly terminalLines: TerminalLine[];
+  readonly lastError: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,13 +301,13 @@ function agentReducer(state: AgentState, action: AgentAction): AgentState {
 // ---------------------------------------------------------------------------
 
 interface AgentContextValue {
-  state: AgentState;
-  connectWallet: () => void;
-  disconnectWallet: () => void;
-  requestSignature: (message: string) => Promise<{ signature: string; publicKey: string }>;
-  triggerAgent: (targetUrl?: string) => Promise<void>;
-  resetSession: () => void;
-  pushEvent: (event: AgentEvent) => void;
+  readonly state: AgentState;
+  readonly connectWallet: () => void;
+  readonly disconnectWallet: () => void;
+  readonly requestSignature: (message: string) => Promise<{ signature: string; publicKey: string }>;
+  readonly triggerAgent: (targetUrl?: string) => Promise<void>;
+  readonly resetSession: () => void;
+  readonly pushEvent: (event: AgentEvent) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
