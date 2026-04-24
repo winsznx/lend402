@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface AsyncState<T> {
-  data: T | null;
-  error: Error | null;
-  loading: boolean;
+  readonly data: T | null;
+  readonly error: Error | null;
+  readonly loading: boolean;
 }
 
 export function useAsync<T>(
