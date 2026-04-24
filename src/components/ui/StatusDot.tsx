@@ -1,9 +1,9 @@
 type Status = "online" | "offline" | "warning" | "error";
 
 interface StatusDotProps {
-  status: Status;
-  label?: string;
-  className?: string;
+  readonly status: Status;
+  readonly label?: string;
+  readonly className?: string;
 }
 
 const COLOR_MAP: Record<Status, string> = {
