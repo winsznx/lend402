@@ -1,8 +1,8 @@
 interface StatBlockProps {
-  label: string;
-  value: string | number;
-  accent?: string;
-  className?: string;
+  readonly label: string;
+  readonly value: string | number;
+  readonly accent?: string;
+  readonly className?: string;
 }
 
 export default function StatBlock({ label, value, accent, className = "" }: StatBlockProps) {
