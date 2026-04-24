@@ -28,19 +28,19 @@ function optionalContractId(
 }
 
 export interface ServerStacksConfig {
-  networkName: Lend402Network;
-  caip2NetworkId: "stacks:1" | "stacks:2147483648";
-  transactionVersion: TransactionVersion;
-  hiroApiBaseUrl: string;
-  vaultContractId: string;
-  vaultContractAddress: string;
-  vaultContractName: string;
-  sbtcContractId: string;
-  sbtcContractAddress: string;
-  sbtcContractName: string;
-  usdcxContractId: string;
-  usdcxContractAddress: string;
-  usdcxContractName: string;
+  readonly networkName: Lend402Network;
+  readonly caip2NetworkId: "stacks:1" | "stacks:2147483648";
+  readonly transactionVersion: TransactionVersion;
+  readonly hiroApiBaseUrl: string;
+  readonly vaultContractId: string;
+  readonly vaultContractAddress: string;
+  readonly vaultContractName: string;
+  readonly sbtcContractId: string;
+  readonly sbtcContractAddress: string;
+  readonly sbtcContractName: string;
+  readonly usdcxContractId: string;
+  readonly usdcxContractAddress: string;
+  readonly usdcxContractName: string;
 }
 
 export function getServerStacksConfig(): ServerStacksConfig {
