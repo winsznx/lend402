@@ -1,7 +1,7 @@
 interface SkeletonProps {
-  className?: string;
-  width?: string;
-  height?: string;
+  readonly className?: string;
+  readonly width?: string;
+  readonly height?: string;
 }
 
 export default function Skeleton({ className = "", width, height }: SkeletonProps) {
