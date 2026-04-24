@@ -1,8 +1,8 @@
 interface MetricCardProps {
-  label: string;
-  value: string | number;
-  delta?: { value: string; positive: boolean };
-  className?: string;
+  readonly label: string;
+  readonly value: string | number;
+  readonly delta?: { value: string; positive: boolean };
+  readonly className?: string;
 }
 
 export default function MetricCard({ label, value, delta, className = "" }: MetricCardProps) {
