@@ -1,9 +1,9 @@
 interface CorsOptions {
-  origin?: string | string[];
-  methods?: string[];
-  headers?: string[];
-  credentials?: boolean;
-  maxAge?: number;
+  readonly origin?: string | string[];
+  readonly methods?: string[];
+  readonly headers?: string[];
+  readonly credentials?: boolean;
+  readonly maxAge?: number;
 }
 
 export function buildCorsHeaders(requestOrigin: string | null, options: CorsOptions = {}): Record<string, string> {
