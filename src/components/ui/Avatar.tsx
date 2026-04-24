@@ -1,7 +1,7 @@
 interface AvatarProps {
-  address: string;
-  size?: "sm" | "md" | "lg";
-  className?: string;
+  readonly address: string;
+  readonly size?: "sm" | "md" | "lg";
+  readonly className?: string;
 }
 
 const SIZE_MAP = { sm: "w-6 h-6 text-[8px]", md: "w-8 h-8 text-[10px]", lg: "w-10 h-10 text-xs" } as const;
