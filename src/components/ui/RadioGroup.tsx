@@ -3,16 +3,16 @@
 import Radio from "./Radio";
 
 interface Option {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
 }
 
 interface RadioGroupProps {
-  name: string;
-  options: Option[];
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
+  readonly name: string;
+  readonly options: Option[];
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly className?: string;
 }
 
 export default function RadioGroup({ name, options, value, onChange, className = "" }: RadioGroupProps) {
