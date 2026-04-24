@@ -1,7 +1,7 @@
 interface CardProps {
-  children: React.ReactNode;
-  className?: string;
-  padding?: "none" | "sm" | "md" | "lg";
+  readonly children: React.ReactNode;
+  readonly className?: string;
+  readonly padding?: "none" | "sm" | "md" | "lg";
 }
 
 const PADDING_MAP = { none: "", sm: "p-3", md: "p-5", lg: "p-7" } as const;
