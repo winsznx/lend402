@@ -26,9 +26,9 @@ export interface PaymentOption
 
 /** x402 V2 HTTP 402 response body */
 export interface PaymentRequiredBody extends Omit<PaymentRequiredV2, "accepts" | "resource"> {
-  x402Version: 2;
-  resource: ResourceInfo;
-  accepts: PaymentOption[];
+  readonly x402Version: 2;
+  readonly resource: ResourceInfo;
+  readonly accepts: PaymentOption[];
 }
 
 // ---------------------------------------------------------------------------
@@ -37,10 +37,10 @@ export interface PaymentRequiredBody extends Omit<PaymentRequiredV2, "accepts" |
 
 /** Decoded content of the payment-signature request header (base64 JSON) */
 export interface XPaymentHeader extends Omit<PaymentPayloadV2, "accepted"> {
-  x402Version: 2;
-  accepted: PaymentOption;
-  payload: {
-    transaction: string;
+  readonly x402Version: 2;
+  readonly accepted: PaymentOption;
+  readonly payload: {
+    readonly transaction: string;
   };
 }
 
@@ -50,10 +50,10 @@ export interface XPaymentHeader extends Omit<PaymentPayloadV2, "accepted"> {
 
 /** Decoded content of the payment-response response header (base64 JSON) */
 export interface XPaymentResponse extends SettlementResponseV2 {
-  network: Caip2NetworkId;
-  transaction: string;
-  blockHeight: number;
-  confirmedAt: number;
+  readonly network: Caip2NetworkId;
+  readonly transaction: string;
+  readonly blockHeight: number;
+  readonly confirmedAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,25 +62,25 @@ export interface XPaymentResponse extends SettlementResponseV2 {
 
 /** Canonical settlement request derived from payment-signature */
 export interface SettlementRequest {
-  x402Version: 2;
-  scheme: PaymentScheme;
-  network: Caip2NetworkId;
-  payload: {
-    signedTransaction: string;
-    type: "contract_call";
+  readonly x402Version: 2;
+  readonly scheme: PaymentScheme;
+  readonly network: Caip2NetworkId;
+  readonly payload: {
+    readonly signedTransaction: string;
+    readonly type: "contract_call";
   };
   /** Gateway resource being unlocked */
-  resource: string;
+  readonly resource: string;
   /** Provider's Stacks principal receiving payment */
-  payTo: string;
+  readonly payTo: string;
 }
 
 /** Confirmed on-chain settlement receipt */
 export interface SettlementReceipt {
-  success: true;
-  txid: string;
-  network: Caip2NetworkId;
-  blockHeight: number;
-  confirmedAt: number;
-  payer: string;
+  readonly success: true;
+  readonly txid: string;
+  readonly network: Caip2NetworkId;
+  readonly blockHeight: number;
+  readonly confirmedAt: number;
+  readonly payer: string;
 }
