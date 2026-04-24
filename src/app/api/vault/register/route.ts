@@ -11,15 +11,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 interface RegisterBody {
-  originUrl: string;
-  priceUsdcx: number;
-  rateLimit: number;
-  resourceName: string;
-  description?: string | null;
-  webhookUrl?: string | null;
-  providerAddress: string;
-  signature: string;
-  message: string;
+  readonly originUrl: string;
+  readonly priceUsdcx: number;
+  readonly rateLimit: number;
+  readonly resourceName: string;
+  readonly description?: string | null;
+  readonly webhookUrl?: string | null;
+  readonly providerAddress: string;
+  readonly signature: string;
+  readonly message: string;
 }
 
 function badRequest(error: string, status = 400): NextResponse {
