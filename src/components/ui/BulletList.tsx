@@ -1,6 +1,6 @@
 interface BulletListProps {
-  items: React.ReactNode[];
-  className?: string;
+  readonly items: React.ReactNode[];
+  readonly className?: string;
 }
 
 export default function BulletList({ items, className = "" }: BulletListProps) {
