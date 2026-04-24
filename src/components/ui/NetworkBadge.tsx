@@ -2,8 +2,8 @@ import Badge from "./Badge";
 import type { Caip2NetworkId } from "@/types/x402";
 
 interface NetworkBadgeProps {
-  network: Caip2NetworkId;
-  className?: string;
+  readonly network: Caip2NetworkId;
+  readonly className?: string;
 }
 
 export default function NetworkBadge({ network, className = "" }: NetworkBadgeProps) {
