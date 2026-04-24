@@ -1,15 +1,15 @@
 "use client";
 
 interface Option {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
 }
 
 interface SegmentedControlProps {
-  options: Option[];
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
+  readonly options: Option[];
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly className?: string;
 }
 
 export default function SegmentedControl({ options, value, onChange, className = "" }: SegmentedControlProps) {
