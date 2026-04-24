@@ -1,8 +1,8 @@
 interface ProgressBarProps {
-  value: number;
-  max?: number;
-  className?: string;
-  color?: string;
+  readonly value: number;
+  readonly max?: number;
+  readonly className?: string;
+  readonly color?: string;
 }
 
 export default function ProgressBar({ value, max = 100, className = "", color }: ProgressBarProps) {
