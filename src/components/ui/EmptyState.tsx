@@ -1,8 +1,8 @@
 interface EmptyStateProps {
-  title: string;
-  description?: string;
-  children?: React.ReactNode;
-  className?: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly children?: React.ReactNode;
+  readonly className?: string;
 }
 
 export default function EmptyState({ title, description, children, className = "" }: EmptyStateProps) {
