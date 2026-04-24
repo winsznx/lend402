@@ -1,6 +1,6 @@
 interface VisuallyHiddenProps {
-  children: React.ReactNode;
-  as?: "span" | "div" | "label";
+  readonly children: React.ReactNode;
+  readonly as?: "span" | "div" | "label";
 }
 
 export default function VisuallyHidden({ children, as: Tag = "span" }: VisuallyHiddenProps) {
