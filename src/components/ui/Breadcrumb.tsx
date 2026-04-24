@@ -1,11 +1,11 @@
 interface BreadcrumbItem {
-  label: string;
-  href?: string;
+  readonly label: string;
+  readonly href?: string;
 }
 
 interface BreadcrumbProps {
-  items: BreadcrumbItem[];
-  className?: string;
+  readonly items: BreadcrumbItem[];
+  readonly className?: string;
 }
 
 export default function Breadcrumb({ items, className = "" }: BreadcrumbProps) {
