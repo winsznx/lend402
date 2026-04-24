@@ -8,35 +8,35 @@ import { Chip } from "@/components/ui/Chip";
 import { buildClientDashboardAccessMessage } from "@/lib/client-messages";
 
 interface DashboardCall {
-  callId: string;
-  settledAt: string;
-  payerAddress: string;
-  txid: string;
-  txidDisplay: string;
-  explorerUrl: string;
-  amountUsdcx: number;
-  originStatus: number | null;
-  status: "success" | "origin_error";
+  readonly callId: string;
+  readonly settledAt: string;
+  readonly payerAddress: string;
+  readonly txid: string;
+  readonly txidDisplay: string;
+  readonly explorerUrl: string;
+  readonly amountUsdcx: number;
+  readonly originStatus: number | null;
+  readonly status: "success" | "origin_error";
 }
 
 interface VaultEntry {
-  vaultId: string;
-  providerAddress: string;
-  resourceName: string;
-  description: string | null;
-  wrappedUrl: string;
-  priceUsdcx: number;
-  rateLimit: number;
-  totalCalls: number;
-  totalEarnedUsdcx: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  recentCalls: DashboardCall[];
+  readonly vaultId: string;
+  readonly providerAddress: string;
+  readonly resourceName: string;
+  readonly description: string | null;
+  readonly wrappedUrl: string;
+  readonly priceUsdcx: number;
+  readonly rateLimit: number;
+  readonly totalCalls: number;
+  readonly totalEarnedUsdcx: number;
+  readonly isActive: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly recentCalls: DashboardCall[];
 }
 
 interface Props {
-  walletAddress: string | null;
+  readonly walletAddress: string | null;
 }
 
 const STORAGE_KEY = "lend402-dashboard-auth";
