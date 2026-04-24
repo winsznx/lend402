@@ -14,11 +14,11 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size    = "sm" | "md" | "lg";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: Variant;
-  size?: Size;
-  loading?: boolean;
-  accentColor?: string; // override default accent
-  children: React.ReactNode;
+  readonly variant?: Variant;
+  readonly size?: Size;
+  readonly loading?: boolean;
+  readonly accentColor?: string; // override default accent
+  readonly children: React.ReactNode;
 }
 
 const SIZE_CLASSES: Record<Size, string> = {
