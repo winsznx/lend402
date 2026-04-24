@@ -1,8 +1,8 @@
 interface CalloutProps {
-  children: React.ReactNode;
-  title?: string;
-  color?: string;
-  className?: string;
+  readonly children: React.ReactNode;
+  readonly title?: string;
+  readonly color?: string;
+  readonly className?: string;
 }
 
 export default function Callout({ children, title, color = "#22d3ee", className = "" }: CalloutProps) {
