@@ -1,6 +1,6 @@
 import type { VaultRecord } from "@/types/vault";
-import { getDb, PgRow } from "./core";
-import { toVaultRecord, asString, asNullableString, asNumber, asBoolean } from "./parsers";
+import { getDb, PgRow } from "@/lib/db/core";
+import { toVaultRecord, asString, asNullableString, asNumber, asBoolean } from "@/lib/db/parsers";
 
 type VaultDashboardUpdate = {
   readonly price_usdcx?: number;
