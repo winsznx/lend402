@@ -1,4 +1,4 @@
-import { VAULT_ERRORS } from "./contracts";
+import { VAULT_ERRORS } from "@/lib/contracts";
 
 export const RECOVERABLE_VAULT_ERRORS = new Set<number>([
   104,
