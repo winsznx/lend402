@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import Providers from "./providers";
-import "./globals.css";
+import Providers from "@/app/providers";
+import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "Lend402 — Stacks-Native x402 Credit Rail for Agentic APIs",
