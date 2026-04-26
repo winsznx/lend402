@@ -1,7 +1,7 @@
 import type { CallRecord } from "@/types/vault";
 import type { XPaymentHeader } from "@/types/x402";
-import { getDb, PgRow } from "./core";
-import { toCallRecord, asString } from "./parsers";
+import { getDb, PgRow } from "@/lib/db/core";
+import { toCallRecord, asString } from "@/lib/db/parsers";
 
 export async function listCallsByVaultIds(vaultIds: string[]): Promise<CallRecord[]> {
   if (vaultIds.length === 0) return [];
