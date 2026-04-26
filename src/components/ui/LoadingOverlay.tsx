@@ -1,6 +1,6 @@
 "use client";
 
-import Spinner from "./Spinner";
+import Spinner from "@/components/ui/Spinner";
 
 interface LoadingOverlayProps {
   readonly visible: boolean;
