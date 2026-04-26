@@ -1,4 +1,4 @@
-import { isUuid } from "./validation";
+import { isUuid } from "@/lib/validation";
 
 export function isVaultId(value: string): boolean {
   return isUuid(value);
