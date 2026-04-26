@@ -1,4 +1,4 @@
-import { X402_VERSION } from "./protocol";
+import { X402_VERSION } from "@/lib/protocol";
 
 export function assertX402Version(version: unknown): asserts version is 2 {
   if (version !== X402_VERSION) {
