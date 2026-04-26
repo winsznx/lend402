@@ -1,4 +1,4 @@
-import Badge from "./Badge";
+import Badge from "@/components/ui/Badge";
 import type { Caip2NetworkId } from "@/types/x402";
 
 interface NetworkBadgeProps {
