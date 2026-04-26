@@ -8,4 +8,4 @@ export {
   PATCH,
   DELETE,
   OPTIONS,
-} from "../../../api/v/[vault_id]/[[...path]]/route";
+} from "@/app/api/v/[vault_id]/[[...path]]/route";
