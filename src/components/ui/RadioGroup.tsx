@@ -1,6 +1,6 @@
 "use client";
 
-import Radio from "./Radio";
+import Radio from "@/components/ui/Radio";
 
 interface Option {
   readonly value: string;
