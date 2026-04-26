@@ -1,4 +1,4 @@
-import Badge from "./Badge";
+import Badge from "@/components/ui/Badge";
 
 interface VaultBadgeProps {
   readonly active: boolean;
