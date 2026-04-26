@@ -1,4 +1,4 @@
-export type { VaultRecord, CallRecord } from "./vault";
+export type { VaultRecord, CallRecord } from "@/types/vault";
 export type {
   Caip2NetworkId,
   PaymentScheme,
@@ -8,11 +8,11 @@ export type {
   XPaymentResponse,
   SettlementRequest,
   SettlementReceipt,
-} from "./x402";
+} from "@/types/x402";
 export type {
   Database,
   VaultRow,
   CallRow,
   DashboardCallRow,
   VaultWithRecentCalls,
-} from "./database";
+} from "@/types/database";
