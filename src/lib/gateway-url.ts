@@ -1,4 +1,4 @@
-import { stripTrailingSlash } from "./network";
+import { stripTrailingSlash } from "@/lib/network";
 
 export function buildGatewayProxyUrl(baseUrl: string, vaultId: string, subPath: string = ""): string {
   const clean = stripTrailingSlash(baseUrl);
