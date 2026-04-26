@@ -1,6 +1,6 @@
 import type { CallRecord, VaultRecord } from "@/types/vault";
 import type { XPaymentHeader } from "@/types/x402";
-import type { PgRow } from "./core";
+import type { PgRow } from "@/lib/db/core";
 
 export function asNumber(value: unknown): number {
   if (typeof value === "number") return value;
